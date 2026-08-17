@@ -37,6 +37,11 @@ def render_table(
 
     lines = [fmt(headers), "  ".join("-" * width for width in widths)]
     lines.extend(fmt(row) for row in rows[1:])
+    for result in results:
+        if result.skip_reason:
+            lines.append(f"{result.name}: skip_reason={result.skip_reason}")
+        if result.error_message:
+            lines.append(f"{result.name}: error_message={result.error_message}")
     lines.append("")
     lines.append(f"persona_id={persona.id} persona_hex={persona.hex}")
     if headlines.scores:

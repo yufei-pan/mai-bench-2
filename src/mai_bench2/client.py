@@ -56,9 +56,12 @@ class ChatClient:
         effective_temperature = (
             self._endpoint.temperature if temperature is None else temperature
         )
+        effective_max_tokens = (
+            self._endpoint.max_tokens if max_tokens is None else max_tokens
+        )
         cache_path = self._cache_path(
             messages,
-            max_tokens=max_tokens,
+            max_tokens=effective_max_tokens,
             temperature=effective_temperature,
             tools=tools,
         )
@@ -83,7 +86,7 @@ class ChatClient:
 
         kwargs = self._request_kwargs(
             messages,
-            max_tokens=max_tokens,
+            max_tokens=effective_max_tokens,
             temperature=effective_temperature,
             tools=tools,
         )

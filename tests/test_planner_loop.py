@@ -1,6 +1,7 @@
 from mai_bench2.planner_loop import run_planner_loop
 from mai_bench2.persona import load_persona
-from pathlib import Path
+
+from conftest import ROOT
 
 ITEM = {
     "id": "gold-001",
@@ -29,7 +30,7 @@ class ScriptClient:
         return ChatResult("", TokenCounts(), False, True, [ToolCall("2", "reply", {"msg_id": "m1", "reply_guide": "提上海", "reference_info": "用户下周去上海"})])
 
 def test_loop_memory_then_reply():
-    persona = load_persona("official", root=Path("/mnt/klein/work/mai-bench-2"))
+    persona = load_persona("official", root=ROOT)
     trace = run_planner_loop(ScriptClient(), persona, ITEM)
     assert trace.action == "reply"
     assert trace.tools_called == ["query_memory", "reply"]
@@ -41,7 +42,6 @@ from copy import deepcopy
 from mai_bench2.planner_loop import tool_specs_for_item
 from mai_bench2.types import ChatResult, TokenCounts, ToolCall
 
-ROOT = Path("/mnt/klein/work/mai-bench-2")
 FORBIDDEN = {
     "tool_search",
     "send_emoji",

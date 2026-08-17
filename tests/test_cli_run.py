@@ -23,10 +23,9 @@ from pathlib import Path
 import json
 import sys
 
+from conftest import ROOT
 from mai_bench2.cli import console, find_config, run_suites
 from mai_bench2.types import SuiteResult, UsageSplit
-
-ROOT = Path("/mnt/klein/work/mai-bench-2")
 _PLANNER = EndpointConfig("http://p/v1", "SECRET_KEY", "m")
 _REPLYER = EndpointConfig("http://r/v1", "SECRET_KEY", "m")
 _JUDGE = EndpointConfig("http://j/v1", "SECRET_KEY", "m")
@@ -133,8 +132,29 @@ def _patch_clients_and_suites(monkeypatch, *, planner=None, replyer=None, e2e=No
 
 def test_run_suites_no_seats_exit_0():
     results, code = run_suites(_cfg(), root=ROOT)
-    assert results == []
+    by_name = {result.name: result for result in results}
     assert code == 0
+    assert by_name["planner"].status == "skipped"
+    assert by_name["planner"].skip_reason == "no_planner"
+    assert by_name["replyer"].status == "skipped"
+    assert by_name["replyer"].skip_reason == "no_replyer"
+    assert by_name["e2e"].status == "skipped"
+    assert by_name["e2e"].skip_reason == "no_planner"
+
+
+def test_default_run_skips_enabled_suites_missing_seats(monkeypatch: pytest.MonkeyPatch):
+    _patch_clients_and_suites(
+        monkeypatch,
+        planner=lambda *a, **k: SuiteResult("planner", "ok", {}, 1.0, UsageSplit(), 0.0, 1),
+    )
+    results, code = run_suites(_cfg(planner=_PLANNER), root=ROOT)
+    by_name = {result.name: result for result in results}
+    assert code == 0
+    assert by_name["planner"].status == "ok"
+    assert by_name["replyer"].status == "skipped"
+    assert by_name["replyer"].skip_reason == "no_replyer"
+    assert by_name["e2e"].status == "skipped"
+    assert by_name["e2e"].skip_reason == "no_replyer"
 
 
 def test_run_suites_explicit_e2e_without_replyer_errors():

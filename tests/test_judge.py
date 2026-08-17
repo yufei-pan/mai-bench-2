@@ -12,9 +12,9 @@ def test_parse_judge_json_rejects_eleven():
 from mai_bench2.judge import DIMS, judge_reply
 from mai_bench2.persona import load_persona
 from mai_bench2.types import ChatResult, TokenCounts
-from pathlib import Path
 
-ROOT = Path("/mnt/klein/work/mai-bench-2")
+from conftest import ROOT
+
 VALID = '{"in_character":8,"style":7,"grounding":9,"group_chat":8,"no_planner_voice":10,"comment":"ok"}'
 ITEM = {
     "id": "gold-001",
@@ -123,13 +123,12 @@ def test_judge_reply_judge_fail_after_retry():
     assert len(client.calls) == 2
 
 
-def test_judge_reply_chat_errors_become_judge_fail():
+def test_judge_reply_chat_errors_propagate():
+    import pytest
+
     client = BoomClient()
-    row = judge_reply(client, _persona(), ITEM, "去上海吧")
-    assert row["judge_fail"] is True
-    for dim in DIMS:
-        assert row[dim] == 0
-    assert len(client.calls) == 2
+    with pytest.raises(RuntimeError, match="network down"):
+        judge_reply(client, _persona(), ITEM, "去上海吧")
 
 
 def test_judge_reply_prompt_is_chinese_json_only():

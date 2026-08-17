@@ -45,11 +45,8 @@ def judge_reply(client, persona, item, visible_reply: str) -> dict:
     """Call client.chat once; if parse fails, call once more; still fail → judge_fail all zeros plus flag."""
     messages = _judge_messages(persona, item, visible_reply)
     for _ in range(2):
-        try:
-            result = client.chat(messages)
-            parsed = parse_judge_json(result.text or "")
-        except Exception:
-            parsed = None
+        result = client.chat(messages)
+        parsed = parse_judge_json(result.text or "")
         if parsed is not None:
             return parsed
     failed = {dim: 0 for dim in DIMS}

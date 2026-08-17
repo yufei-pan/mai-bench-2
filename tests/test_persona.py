@@ -1,7 +1,6 @@
-from pathlib import Path
 from mai_bench2.persona import load_persona
 
-ROOT = Path("/mnt/klein/work/mai-bench-2")
+from conftest import ROOT
 
 def test_official_persona_hex():
     persona = load_persona("official", root=ROOT)

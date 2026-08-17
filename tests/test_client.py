@@ -219,3 +219,24 @@ def test_extract_usage_and_add_counts():
     assert summed.prompt_tokens == 2
     assert summed.requests == 2
     assert summed.usage_missing == 1
+
+
+def test_chat_none_max_tokens_uses_endpoint_probe_stays_1(tmp_path: Path):
+    seen = []
+
+    def create_fn(**kwargs):
+        seen.append(kwargs)
+        return FakeResp()
+
+    client = ChatClient(
+        EndpointConfig("http://x/v1", "k", "m", max_tokens=123),
+        "planner",
+        tmp_path,
+        no_cache=True,
+        create_fn=create_fn,
+    )
+    client.chat([{"role": "user", "content": "hi"}])
+    assert seen[0]["max_tokens"] == 123
+    seen.clear()
+    client.probe([{"role": "user", "content": "ping"}], max_tokens=1)
+    assert seen[0]["max_tokens"] == 1

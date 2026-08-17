@@ -26,6 +26,9 @@ pip install -e .
 cp config.example.toml config.toml
 ```
 
+Install is `pip install -e .` from a source checkout. `personas/` and `data/`
+live at the repo root; a non-editable `pip install .` will not find them.
+
 Edit `config.toml` and export `${PLANNER_API_KEY}`, `${REPLYER_API_KEY}`,
 `${JUDGE_BASE_URL}`, and `${JUDGE_API_KEY}`. Config is resolved as `--config`,
 then `./config.toml`, then `~/.config/mai-bench-2/config.toml`.

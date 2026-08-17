@@ -117,3 +117,34 @@ def test_write_artifacts_redacts_api_key_and_writes_files(tmp_path: Path):
     planner_json = (tmp_path / "planner.json").read_text(encoding="utf-8")
     assert "planner" in planner_json
     assert "SUPER_SECRET" not in planner_json
+
+
+def test_table_shows_skip_reason_and_error_message():
+    table = _table(
+        results=[
+            SuiteResult(
+                "planner",
+                "error",
+                {},
+                None,
+                UsageSplit(),
+                0.0,
+                3,
+                error_message="all model calls failed",
+            ),
+            SuiteResult(
+                "replyer",
+                "skipped",
+                {},
+                None,
+                UsageSplit(),
+                0.0,
+                0,
+                skip_reason="no_judge",
+            ),
+        ],
+        smoke=False,
+        headlines=HeadlineOutcome({}, ["error", "skipped"]),
+    )
+    assert "all model calls failed" in table
+    assert "no_judge" in table
