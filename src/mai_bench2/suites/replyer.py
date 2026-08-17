@@ -119,7 +119,9 @@ def _replyer_messages(persona, item: dict) -> list[dict]:
         if item.get("channel") == "private"
         else persona.group_chat_prompt
     )
-    system = f"{persona.personality}\n{persona.reply_style}\n{chat_prompt}"
+    system = (
+        f"{persona.nickname}\n{persona.personality}\n{persona.reply_style}\n{chat_prompt}"
+    )
     user = (
         f"{_format_log(handoff['messages'])}\n\n"
         f"reply_guide: {handoff['reply_guide']}\n"

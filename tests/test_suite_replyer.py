@@ -162,6 +162,7 @@ def test_replyer_system_is_personality_style_group_prompt():
     system = replyer.calls[0]["messages"][0]
     assert system["role"] == "system"
     content = system["content"]
+    assert persona.nickname in content
     assert persona.personality in content
     assert persona.reply_style in content
     assert persona.group_chat_prompt in content
