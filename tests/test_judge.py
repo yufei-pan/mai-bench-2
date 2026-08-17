@@ -1,0 +1,147 @@
+from mai_bench2.judge import parse_judge_json
+
+def test_parse_judge_json_ok():
+    text = '{"in_character":8,"style":7,"grounding":9,"group_chat":8,"no_planner_voice":10,"comment":"ok"}'
+    row = parse_judge_json(text)
+    assert row["grounding"] == 9
+
+def test_parse_judge_json_rejects_eleven():
+    assert parse_judge_json('{"in_character":11,"style":0,"grounding":0,"group_chat":0,"no_planner_voice":0}') is None
+
+
+from mai_bench2.judge import DIMS, judge_reply
+from mai_bench2.persona import load_persona
+from mai_bench2.types import ChatResult, TokenCounts
+from pathlib import Path
+
+ROOT = Path("/mnt/klein/work/mai-bench-2")
+VALID = '{"in_character":8,"style":7,"grounding":9,"group_chat":8,"no_planner_voice":10,"comment":"ok"}'
+ITEM = {
+    "id": "gold-001",
+    "channel": "group",
+    "gold": {"required_facts": ["上海"]},
+    "oracle_handoff": {
+        "reply_guide": "提上海",
+        "reference_info": "用户说过下周去上海",
+        "messages": [
+            {"t": 0, "speaker": "alice", "text": "麦麦，我下周去上海，有啥建议吗", "msg_id": "m1"}
+        ],
+    },
+}
+
+
+class ScriptClient:
+    def __init__(self, texts):
+        self._texts = list(texts)
+        self.calls = []
+
+    def chat(self, messages, *, max_tokens=None, temperature=None, tools=None):
+        self.calls.append(
+            {
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "tools": tools,
+            }
+        )
+        if not self._texts:
+            raise RuntimeError("no scripted replies")
+        return ChatResult(self._texts.pop(0), TokenCounts(), False, True, [])
+
+
+class BoomClient:
+    def __init__(self):
+        self.calls = []
+
+    def chat(self, messages, *, max_tokens=None, temperature=None, tools=None):
+        self.calls.append(messages)
+        raise RuntimeError("network down")
+
+
+def _persona():
+    return load_persona("official", root=ROOT)
+
+
+def test_dims_tuple():
+    assert DIMS == ("in_character", "style", "grounding", "group_chat", "no_planner_voice")
+
+
+def test_parse_judge_json_accepts_zero_and_ten():
+    text = '{"in_character":0,"style":10,"grounding":0,"group_chat":10,"no_planner_voice":0}'
+    row = parse_judge_json(text)
+    assert row["style"] == 10
+    assert row["in_character"] == 0
+
+
+def test_parse_judge_json_strips_markdown_fences():
+    inner = '{"in_character":8,"style":7,"grounding":9,"group_chat":8,"no_planner_voice":10}'
+    assert parse_judge_json(f"```json\n{inner}\n```")["grounding"] == 9
+    assert parse_judge_json(f"```\n{inner}\n```")["grounding"] == 9
+
+
+def test_parse_judge_json_extracts_object_from_prose():
+    text = "评分如下\n" + VALID + "\n完毕"
+    assert parse_judge_json(text)["grounding"] == 9
+
+
+def test_parse_judge_json_rejects_invalid():
+    missing = '{"in_character":8,"style":7,"grounding":9,"group_chat":8}'
+    negative = '{"in_character":-1,"style":0,"grounding":0,"group_chat":0,"no_planner_voice":0}'
+    floating = '{"in_character":8.5,"style":0,"grounding":0,"group_chat":0,"no_planner_voice":0}'
+    boolean = '{"in_character":true,"style":0,"grounding":0,"group_chat":0,"no_planner_voice":0}'
+    assert parse_judge_json(missing) is None
+    assert parse_judge_json(negative) is None
+    assert parse_judge_json(floating) is None
+    assert parse_judge_json(boolean) is None
+    assert parse_judge_json("") is None
+    assert parse_judge_json("not json") is None
+    assert parse_judge_json("[]") is None
+
+
+def test_judge_reply_parses_first_call():
+    client = ScriptClient([VALID])
+    row = judge_reply(client, _persona(), ITEM, "去上海吧")
+    assert row["grounding"] == 9
+    assert "judge_fail" not in row or not row["judge_fail"]
+    assert len(client.calls) == 1
+    assert client.calls[0]["temperature"] is None
+
+
+def test_judge_reply_retries_once_then_succeeds():
+    client = ScriptClient(["not json", VALID])
+    row = judge_reply(client, _persona(), ITEM, "去上海吧")
+    assert row["grounding"] == 9
+    assert len(client.calls) == 2
+
+
+def test_judge_reply_judge_fail_after_retry():
+    client = ScriptClient(["nope", "still nope"])
+    row = judge_reply(client, _persona(), ITEM, "去上海吧")
+    assert row["judge_fail"] is True
+    for dim in DIMS:
+        assert row[dim] == 0
+    assert len(client.calls) == 2
+
+
+def test_judge_reply_chat_errors_become_judge_fail():
+    client = BoomClient()
+    row = judge_reply(client, _persona(), ITEM, "去上海吧")
+    assert row["judge_fail"] is True
+    for dim in DIMS:
+        assert row[dim] == 0
+    assert len(client.calls) == 2
+
+
+def test_judge_reply_prompt_is_chinese_json_only():
+    client = ScriptClient([VALID])
+    judge_reply(client, _persona(), ITEM, "去上海吧")
+    blob = "\n".join(message["content"] for message in client.calls[0]["messages"])
+    assert "JSON" in blob or "json" in blob
+    assert "只" in blob
+    for dim in DIMS:
+        assert dim in blob
+    assert "去上海吧" in blob
+    assert "上海" in blob
+    persona = _persona()
+    assert persona.personality in blob or persona.nickname in blob
+    assert any("\u4e00" <= ch <= "\u9fff" for ch in blob)
