@@ -3,25 +3,18 @@
 id = "minimal"
 
 [planner]
-system = """规划席。只能用原生 tool_calls，正文里的 JSON 不执行。
-{tools}
-聊天记录是 <message> 块，属性有 msg_id / time / user / group_card / quote / is_self_message。
-{behavior_style}
-你是{nickname}。"""
+system = """规划席。{bot_name} {behavior_style} {group_chat_attention_block} {query_memory_rule}"""
+final_assistant_reminder = "提醒 {bot_name}"
 
-[planner.tool_line]
-wait = "- wait(seconds) 等待"
-reply = "- reply(msg_id, reply_guide, reference_info) 交给回复席"
-no_action = "- no_action() 本轮不说话"
-query_memory = "- query_memory(query) 查记忆"
-query_person_profile = "- query_person_profile(person_name) 查人物"
-lookup = "- lookup(query) 查条目"
+[planner.query_memory_rule]
+group = "- query_memory() 群聊记忆"
+private = "- query_memory() 私聊记忆"
 
 [replyer]
-system = """你是{nickname}。{personality}
-{reply_style}
-{chat_prompt}"""
-user = """{log}
+system = """{identity} {reply_style} {group_chat_attention_block} {replyer_output_instruction}"""
+output_instruction = "只输出发言内容。"
+final_instruction = "自然回复，只输出发言。"
 
-指引：{reply_guide}
-参考：{reference_info}"""
+[replyer.reply_style_message]
+"简短表达" = "请简短回复"
+"长回复" = "可以详细回复"

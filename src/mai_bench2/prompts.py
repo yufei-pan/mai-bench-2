@@ -9,11 +9,21 @@ from __future__ import annotations
 import hashlib
 import json
 import tomllib
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
 
-_HEX_KEYS = ("planner_system", "replyer_system", "replyer_user")
+_HEX_KEYS = (
+    "planner_system",
+    "planner_final_assistant_reminder",
+    "query_memory_rule_group",
+    "query_memory_rule_private",
+    "replyer_system",
+    "replyer_output_instruction",
+    "replyer_final_instruction",
+    "reply_style_short",
+    "reply_style_long",
+)
 
 
 @dataclass(frozen=True)
@@ -21,9 +31,14 @@ class Prompts:
     id: str
     path: str
     planner_system: str
+    planner_final_assistant_reminder: str
+    query_memory_rule_group: str
+    query_memory_rule_private: str
     replyer_system: str
-    replyer_user: str
-    tool_lines: dict[str, str] = field(default_factory=dict)
+    replyer_output_instruction: str
+    replyer_final_instruction: str
+    reply_style_short: str
+    reply_style_long: str
     hex: str = ""
 
 
@@ -39,7 +54,6 @@ def fill(template: str, values: dict[str, str]) -> str:
 def prompts_hex(prompts: Prompts) -> str:
     """SHA-256 over canonical JSON of the applied templates. First 12 hex chars."""
     payload = {key: getattr(prompts, key).strip("\n") for key in _HEX_KEYS}
-    payload["tool_lines"] = dict(sorted(prompts.tool_lines.items()))
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:12]
 
@@ -49,18 +63,44 @@ def load_prompts(spec: str, *, root: Path) -> Prompts:
     path = _resolve(spec, root=root)
     with path.open("rb") as handle:
         data = tomllib.load(handle)
-    planner = data.get("planner") or {}
-    replyer = data.get("replyer") or {}
-    for section, key in (("planner", "system"), ("replyer", "system"), ("replyer", "user")):
-        if not isinstance((data.get(section) or {}).get(key), str):
-            raise ValueError(f"invalid prompts: {path.name}: missing [{section}].{key}")
+    planner = data.get("planner") if isinstance(data.get("planner"), dict) else {}
+    replyer = data.get("replyer") if isinstance(data.get("replyer"), dict) else {}
+    query_memory = (
+        planner.get("query_memory_rule")
+        if isinstance(planner.get("query_memory_rule"), dict)
+        else {}
+    )
+    styles = (
+        replyer.get("reply_style_message")
+        if isinstance(replyer.get("reply_style_message"), dict)
+        else {}
+    )
+    required = {
+        "planner.system": planner.get("system"),
+        "planner.final_assistant_reminder": planner.get("final_assistant_reminder"),
+        "planner.query_memory_rule.group": query_memory.get("group"),
+        "planner.query_memory_rule.private": query_memory.get("private"),
+        "replyer.system": replyer.get("system"),
+        "replyer.output_instruction": replyer.get("output_instruction"),
+        "replyer.final_instruction": replyer.get("final_instruction"),
+        "replyer.reply_style_message.简短表达": styles.get("简短表达"),
+        "replyer.reply_style_message.长回复": styles.get("长回复"),
+    }
+    missing = [key for key, value in required.items() if not isinstance(value, str)]
+    if missing:
+        raise ValueError(f"invalid prompts: {path.name}: missing {missing[0]}")
     prompts = Prompts(
         id=data.get("id") or path.stem,
         path=str(path),
-        planner_system=planner["system"],
-        replyer_system=replyer["system"],
-        replyer_user=replyer["user"],
-        tool_lines=dict(planner.get("tool_line") or {}),
+        planner_system=required["planner.system"],
+        planner_final_assistant_reminder=required["planner.final_assistant_reminder"],
+        query_memory_rule_group=required["planner.query_memory_rule.group"],
+        query_memory_rule_private=required["planner.query_memory_rule.private"],
+        replyer_system=required["replyer.system"],
+        replyer_output_instruction=required["replyer.output_instruction"],
+        replyer_final_instruction=required["replyer.final_instruction"],
+        reply_style_short=required["replyer.reply_style_message.简短表达"],
+        reply_style_long=required["replyer.reply_style_message.长回复"],
     )
     return replace(prompts, hex=prompts_hex(prompts))
 
