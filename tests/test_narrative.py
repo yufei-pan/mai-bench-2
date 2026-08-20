@@ -127,6 +127,11 @@ def test_generate_narrative_prompt_includes_contract_and_evidence():
     assert "lookup" not in blob
     assert "no_action" not in blob
     assert "不调用工具" in blob
+    assert "这一步没有原生 tool_call" not in blob
+    assert "msg_id" in blob
+    assert "空白" in blob
+    assert "未知或畸形" in blob
+    assert "不是 contract_fail" in blob
     assert "gold-001" in blob
     assert "cursor/grok-4.6-xhigh" in blob
     assert "cliproxyapi/gpt-5.6-sol(max)" in blob

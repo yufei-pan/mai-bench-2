@@ -47,6 +47,10 @@ def test_readme_covers_install_suites_gating_and_warnings():
     assert "unpublished" in lower
     assert "not a live" in lower or "not live" in lower
     assert "narrative.md" in lower
+    assert "including tool JSON written" in text
+    assert "into the assistant body" in text
+    assert "writes tool JSON in text instead of native" not in text
+    assert "Tool JSON written in text is idle" in text
 
 
 def test_example_config_seats_env_smoke_and_temps():
