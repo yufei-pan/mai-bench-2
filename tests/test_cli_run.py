@@ -264,7 +264,7 @@ def test_console_run_writes_redacted_artifacts(tmp_path: Path, monkeypatch: pyte
     captured = capsys.readouterr()
     assert "SECRET_KEY" not in captured.out
     assert "SECRET_KEY" not in captured.err
-    assert "1a46dd3e9eb3" in captured.out
+    assert "77be5c59f150" in captured.out
     assert "official" in captured.out
     assert "WARNING: this was a smoke run. These numbers are not publishable." in captured.out
     runs = [path for path in out_dir.iterdir() if path.is_dir()]
@@ -274,7 +274,7 @@ def test_console_run_writes_redacted_artifacts(tmp_path: Path, monkeypatch: pyte
     assert "***" in dumped
     summary = json.loads((runs[0] / "summary.json").read_text(encoding="utf-8"))
     assert summary["persona_id"] == "official"
-    assert summary["persona_hex"] == "1a46dd3e9eb3"
+    assert summary["persona_hex"] == "77be5c59f150"
     assert "SECRET_KEY" not in json.dumps(summary)
 
 

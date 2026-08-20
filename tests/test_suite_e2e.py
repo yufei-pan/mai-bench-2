@@ -87,8 +87,7 @@ class ReplyPlanner:
                     {
                         "msg_id": "m1",
                         "set_quote": False,
-                        "reply_guide": "提到上海",
-                        "reference_info": "用户说过下周去上海",
+                        "reply_reference": "用户说过下周去上海",
                     },
                 )
             ],
@@ -236,7 +235,7 @@ def test_e2e_predictions_include_assistant_text():
         root=ROOT,
     )
     extra = result.predictions[0].extra
-    assert extra["planner_action"] == "contract_fail"
+    assert extra["planner_action"] == "none"
     assert extra["native_tool_call_count"] == 0
     assert "reply" in extra["assistant_text"]
 
@@ -246,16 +245,17 @@ def test_e2e_replyer_prompt_includes_nickname_and_planner_handoff():
     replyer = ConstClient(REPLY_TEXT)
     judge = ConstClient(SCORE_8)
     run_e2e_suite(_cfg(smoke=True, smoke_n=1), ReplyPlanner(), replyer, judge, persona, root=ROOT)
-    system = replyer.calls[0]["messages"][0]
+    captured = replyer.calls[0]["messages"]
+    system = captured[0]
     assert system["role"] == "system"
     assert persona.nickname in system["content"]
     assert persona.personality in system["content"]
-    user = replyer.calls[0]["messages"][1]["content"]
-    assert "提到上海" in user  # the scripted planner's own reply_guide
-    assert "用户说过下周去上海" in user  # and its reference_info
+    blob = "\n".join(m["content"] for m in captured)
+    assert "用户说过下周去上海" in blob
     first = load_gold(ROOT, "planner")[0]
-    assert first["messages"][0]["text"] in user  # plus the real visible chat
-    assert "<message" in user  # rendered in MaiBot's envelope
+    assert first["messages"][0]["text"] in blob
+    history = [m for m in captured if m["role"] in {"user", "assistant"}]
+    assert not any("<message" in (m.get("content") or "") for m in history)
 
 
 def test_e2e_smoke_passes_min_smoke_n():

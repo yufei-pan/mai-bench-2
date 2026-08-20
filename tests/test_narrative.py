@@ -25,7 +25,7 @@ class ScriptClient:
 
 class _Persona:
     id = "official"
-    hex = "1a46dd3e9eb3"
+    hex = "77be5c59f150"
     nickname = "麦麦"
 
 
@@ -121,11 +121,17 @@ def test_generate_narrative_prompt_includes_contract_and_evidence():
     assert "建议" in blob
     assert "不可发表" in blob or "not publishable" in blob.lower()
     assert "query_memory" in blob
+    assert "tool_search" in blob
+    assert "send_emoji" in blob
+    assert "view_forward_message" in blob
+    assert "lookup" not in blob
+    assert "no_action" not in blob
+    assert "不调用工具" in blob
     assert "gold-001" in blob
     assert "cursor/grok-4.6-xhigh" in blob
     assert "cliproxyapi/gpt-5.6-sol(max)" in blob
     assert "official" in blob
-    assert "1a46dd3e9eb3" in blob
+    assert "77be5c59f150" in blob
     assert "planner  ok  action=0.33" in blob
     assert "native_tool_call_count" in blob or "native tool" in blob.lower()
 
