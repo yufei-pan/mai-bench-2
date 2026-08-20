@@ -72,7 +72,7 @@ def run_planner_loop(
     stop_reason = "max_steps"
     stop = False
 
-    specs = tool_specs_for_item(item)
+    specs = tool_specs_for_item(item, unlocked=set())
     conversation: list[dict] = [
         {
             "role": "user",
