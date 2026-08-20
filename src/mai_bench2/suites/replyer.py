@@ -6,10 +6,16 @@ from pathlib import Path
 from mai_bench2.config import AppConfig
 from mai_bench2.gold import load_gold, select_items
 from mai_bench2.judge import DIMS, judge_reply
+from mai_bench2.maibot_shape import (
+    attention_block,
+    identity,
+    replyer_history,
+    stamp,
+    target_block,
+)
 from mai_bench2.metrics import replyer_v1
 from mai_bench2.persona import Persona
 from mai_bench2.prompts import Prompts, default_prompts, fill
-from mai_bench2.render import render_log
 from mai_bench2.types import Prediction, SuiteResult, TokenCounts, UsageSplit
 
 
@@ -166,6 +172,7 @@ def generate_reply(client, persona, item: dict, prompts: Prompts | None = None) 
 
 def _replyer_messages(persona, item: dict, prompts) -> list[dict]:
     handoff = item["oracle_handoff"]
+    chat = list(handoff.get("messages") or [])
     chat_prompt = (
         persona.private_chat_prompt
         if item.get("channel") == "private"
@@ -174,28 +181,36 @@ def _replyer_messages(persona, item: dict, prompts) -> list[dict]:
     system = fill(
         prompts.replyer_system,
         {
-            "nickname": persona.nickname,
-            "personality": persona.personality,
+            "identity": identity(persona.nickname, persona.personality),
             "reply_style": persona.reply_style,
-            "chat_prompt": chat_prompt,
+            "group_chat_attention_block": attention_block(chat_prompt),
+            "replyer_output_instruction": prompts.replyer_output_instruction,
         },
     )
-    user = fill(
-        prompts.replyer_user,
-        {
-            "log": _format_log(handoff["messages"]),
-            "reply_guide": str(handoff["reply_guide"]),
-            "reference_info": str(handoff["reference_info"]),
-        },
-    )
-    return [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user},
+    messages = [{"role": "system", "content": system}]
+    messages.extend(replyer_history(chat))
+    reference = str(handoff.get("reply_reference") or "")
+    analysis = str(handoff.get("analysis") or "")
+    if reference.strip():
+        messages.append({"role": "user", "content": reference})
+    elif analysis.strip():
+        messages.append({"role": "user", "content": f"当前思考：\n{analysis}"})
+    gold = item["gold"] if isinstance(item.get("gold"), dict) else {}
+    msg_id = str(handoff.get("msg_id") or gold.get("reply_msg_id") or "")
+    parts = [
+        f"当前时间：{stamp(int(item.get('target_t') or 0))}",
+        target_block(chat, msg_id, persona.nickname),
+        prompts.replyer_final_instruction,
     ]
-
-
-def _format_log(messages: list[dict]) -> str:
-    return render_log(messages)
+    joined = "\n\n".join(part for part in parts if part)
+    if joined:
+        messages.append({"role": "user", "content": joined})
+    style = str(handoff.get("reply_style") or "")
+    if style == "简短表达":
+        messages.append({"role": "user", "content": prompts.reply_style_short})
+    elif style == "长回复":
+        messages.append({"role": "user", "content": prompts.reply_style_long})
+    return messages
 
 
 def _dimension_means(rows: list[dict]) -> dict[str, float]:

@@ -223,16 +223,19 @@ def _hydrate(items: list[dict], root: Path) -> list[dict]:
 
 def _handoff_from_trace(trace: PlannerTrace) -> dict:
     reply_args = trace.reply_args or {}
-    reference_info = str(reply_args.get("reference_info") or "")
+    reference = str(reply_args.get("reply_reference") or "")
     if trace.tool_reference_text:
-        if reference_info:
-            reference_info = f"{reference_info}\n{trace.tool_reference_text}"
-        else:
-            reference_info = trace.tool_reference_text
+        reference = (
+            f"{reference}\n{trace.tool_reference_text}"
+            if reference
+            else trace.tool_reference_text
+        )
     return {
-        "reply_guide": str(reply_args.get("reply_guide") or ""),
-        "reference_info": reference_info,
         "messages": list(trace.handoff_messages),
+        "reply_reference": reference,
+        "analysis": trace.assistant_text,
+        "msg_id": str(reply_args.get("msg_id") or ""),
+        "reply_style": str(reply_args.get("reply_style") or ""),
     }
 
 
