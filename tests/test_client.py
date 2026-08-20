@@ -186,7 +186,7 @@ def test_retries_transient_status_with_backoff(tmp_path: Path, status_code: int)
     )
     client.chat([{"role": "user", "content": "x"}])
     assert attempts["n"] == 3
-    assert sleeps == [0.01, 0.02]
+    assert sleeps == [2.0, 8.0]
 
 
 def test_extract_usage_and_add_counts():
@@ -240,3 +240,57 @@ def test_chat_none_max_tokens_uses_endpoint_probe_stays_1(tmp_path: Path):
     seen.clear()
     client.probe([{"role": "user", "content": "ping"}], max_tokens=1)
     assert seen[0]["max_tokens"] == 1
+
+
+def test_sdk_retries_are_disabled_so_ours_are_the_only_ones(monkeypatch):
+    """SDK max_retries=2 multiplied with our attempts into 9 upstream requests per
+    logical call, which hammers a router that is already out of keys."""
+    captured = {}
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.chat = type(
+                "C", (), {"completions": type("D", (), {"create": staticmethod(lambda **k: None)})()}
+            )()
+
+    monkeypatch.setattr("mai_bench2.client.OpenAI", FakeOpenAI)
+    ChatClient(EndpointConfig("http://x/v1", "k", "m"), "judge", Path("/tmp/x"), True)
+    assert captured["max_retries"] == 0
+
+
+def test_retry_delay_honours_retry_after_and_caps_it():
+    from mai_bench2.client import retry_delay
+
+    class WithHeader(Exception):
+        def __init__(self, value):
+            self.response = type("R", (), {"headers": {"retry-after": value}})()
+
+    assert retry_delay(WithHeader("30"), 0) == 30.0
+    assert retry_delay(WithHeader("99999"), 0) == 120.0  # capped
+    assert retry_delay(WithHeader("Wed, 21 Oct 2026 07:28:00 GMT"), 0) == 2.0  # falls back
+    assert retry_delay(Exception(), 0) == 2.0
+    assert retry_delay(Exception(), 3) == 45.0
+    assert retry_delay(Exception(), 99) == 90.0  # clamped to the last step
+
+
+def test_max_attempts_is_configurable(tmp_path: Path):
+    attempts = {"n": 0}
+    sleeps = []
+
+    def create_fn(**kwargs):
+        attempts["n"] += 1
+        raise Boom(status_code=503, message="exhausted")
+
+    client = ChatClient(
+        EndpointConfig("http://x/v1", "k", "m", max_attempts=5),
+        "judge",
+        tmp_path,
+        no_cache=True,
+        create_fn=create_fn,
+        sleep_fn=sleeps.append,
+    )
+    with pytest.raises(Boom):
+        client.chat([{"role": "user", "content": "x"}])
+    assert attempts["n"] == 5
+    assert sleeps == [2.0, 8.0, 20.0, 45.0]

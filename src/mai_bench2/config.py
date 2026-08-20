@@ -17,8 +17,17 @@ _ENDPOINT_KEYS = (
     "reasoning_effort",
     "extra_body",
     "max_tokens",
+    "max_attempts",
 )
-_RUN_KEYS = ("smoke", "persona", "concurrency", "cache_dir", "output_dir", "no_cache")
+_RUN_KEYS = (
+    "smoke",
+    "persona",
+    "prompts",
+    "cache_dir",
+    "output_dir",
+    "no_cache",
+    "repeats",
+)
 
 
 class ConfigError(Exception):
@@ -31,10 +40,13 @@ class EndpointConfig:
     api_key: str
     model: str
     timeout_s: float = 300.0
-    temperature: float = 0.0
+    temperature: float | None = 0.0  # None omits the field entirely
     reasoning_effort: str | None = None
     extra_body: dict = field(default_factory=dict)
     max_tokens: int = 256000
+    # Attempts per request, including the first. A router rotating exhausted
+    # provider keys needs more patience than a plain HTTP blip.
+    max_attempts: int = 5
 
 
 @dataclass
@@ -47,10 +59,11 @@ class SuiteConfig:
 class RunConfig:
     smoke: bool = True
     persona: str = "official"
-    concurrency: int = 1
+    prompts: str = "official"
     cache_dir: str = "~/.cache/mai-bench-2"
     output_dir: str = "./results"
     no_cache: bool = False
+    repeats: int = 1
 
 
 @dataclass
@@ -89,8 +102,12 @@ def apply_overrides(cfg: AppConfig, args) -> AppConfig:
         run = replace(run, smoke=False)
     if args.persona is not None:
         run = replace(run, persona=args.persona)
+    if getattr(args, "prompts", None) is not None:
+        run = replace(run, prompts=args.prompts)
     if args.no_cache:
         run = replace(run, no_cache=True)
+    if getattr(args, "repeats", None):
+        run = replace(run, repeats=max(1, int(args.repeats)))
     suite_flag = args.suite if args.suite is not None else cfg.suite_flag
     return replace(cfg, run=run, suite_flag=suite_flag)
 

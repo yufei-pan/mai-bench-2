@@ -1,0 +1,27 @@
+# A terse alternative template, shipped as a working example of --prompts.
+# Copy this to make your own; runs carry prompts_hex so they stay distinguishable.
+id = "minimal"
+
+[planner]
+system = """规划席。只能用原生 tool_calls，正文里的 JSON 不执行。
+{tools}
+聊天记录是 <message> 块，属性有 msg_id / time / user / group_card / quote / is_self_message。
+{behavior_style}
+你是{nickname}。"""
+
+[planner.tool_line]
+wait = "- wait(seconds) 等待"
+reply = "- reply(msg_id, reply_guide, reference_info) 交给回复席"
+no_action = "- no_action() 本轮不说话"
+query_memory = "- query_memory(query) 查记忆"
+query_person_profile = "- query_person_profile(person_name) 查人物"
+lookup = "- lookup(query) 查条目"
+
+[replyer]
+system = """你是{nickname}。{personality}
+{reply_style}
+{chat_prompt}"""
+user = """{log}
+
+指引：{reply_guide}
+参考：{reference_info}"""

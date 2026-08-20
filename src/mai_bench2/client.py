@@ -14,8 +14,14 @@ from mai_bench2.config import EndpointConfig
 from mai_bench2.types import ChatResult, TokenCounts, ToolCall
 from mai_bench2.usage import add_counts, extract_usage
 
-_RETRYABLE_STATUS_CODES = {429, 500, 502, 503}
-_BACKOFF_SECONDS = (0.01, 0.02, 0.04)
+_RETRYABLE_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504, 529}
+# Seconds. Tests inject sleep_fn, so these are the real-world values, not
+# test-speed ones: 10ms of backoff against a rate-limited router is no backoff.
+# "all providers, keys, and models were exhausted" clears on a timescale of
+# minutes, so the tail of this schedule is deliberately long.
+_BACKOFF_SECONDS = (2.0, 8.0, 20.0, 45.0, 90.0)
+# A server may ask for an unreasonable wait; cap what we will honour.
+_MAX_RETRY_AFTER = 120.0
 
 
 class ChatClient:
@@ -35,12 +41,17 @@ class ChatClient:
         self._sleep = sleep_fn
         self._usage = TokenCounts()
         self._usage_lock = threading.Lock()
+        self._sample = 0
 
         if create_fn is None:
             openai_client = OpenAI(
                 base_url=endpoint.base_url,
                 api_key=endpoint.api_key,
                 timeout=endpoint.timeout_s,
+                # This class owns the retry policy. The SDK defaults to 2 retries
+                # of its own, which multiplied with ours into 9 upstream requests
+                # per logical call and hammered an already-exhausted router.
+                max_retries=0,
             )
             create_fn = openai_client.chat.completions.create
         self._create = create_fn
@@ -121,7 +132,9 @@ class ChatClient:
 
         return result
 
-    def probe(self, messages: list[dict], *, max_tokens: int = 1) -> None:
+    def probe(self, messages: list[dict], *, max_tokens: int = 16) -> None:
+        """A reasoning endpoint can spend the whole budget thinking, so max_tokens=1
+        was a needlessly sharp edge for a liveness check."""
         kwargs = self._request_kwargs(
             messages,
             max_tokens=max_tokens,
@@ -129,6 +142,10 @@ class ChatClient:
             tools=None,
         )
         self._create_with_retries(kwargs)
+
+    def set_sample(self, sample: int) -> None:
+        """Repeat index. It joins the cache key so run k is not run 0 replayed."""
+        self._sample = int(sample)
 
     def usage_snapshot(self) -> TokenCounts:
         with self._usage_lock:
@@ -142,11 +159,9 @@ class ChatClient:
         temperature: float,
         tools: list[dict] | None,
     ) -> dict:
-        kwargs = {
-            "model": self._endpoint.model,
-            "messages": messages,
-            "temperature": temperature,
-        }
+        kwargs = {"model": self._endpoint.model, "messages": messages}
+        if temperature is not None:
+            kwargs["temperature"] = temperature
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
         if self._endpoint.reasoning_effort is not None:
@@ -176,25 +191,51 @@ class ChatClient:
             "messages": messages,
             "max_tokens": max_tokens,
             "tools": tools,
+            "sample": self._sample,
         }
         canonical = json.dumps(cache_key, sort_keys=True, separators=(",", ":"))
         digest = hashlib.sha256(canonical.encode()).hexdigest()
         return self._cache_dir / "llm" / f"{digest}.json"
 
     def _create_with_retries(self, kwargs: dict):
-        for attempt in range(3):
+        attempts = max(1, int(self._endpoint.max_attempts))
+        for attempt in range(attempts):
             try:
                 return self._create(**kwargs)
             except Exception as error:
-                if not _is_retryable(error) or attempt == 2:
+                if not _is_retryable(error) or attempt == attempts - 1:
                     raise
-                self._sleep(_BACKOFF_SECONDS[attempt])
+                self._sleep(retry_delay(error, attempt))
         raise AssertionError("unreachable")
 
 
 def _is_retryable(error: Exception) -> bool:
     status_code = getattr(error, "status_code", None)
     return status_code in _RETRYABLE_STATUS_CODES
+
+
+def retry_delay(error: Exception, attempt: int) -> float:
+    """Honour Retry-After when the server sends one, else the backoff schedule."""
+    requested = _retry_after(error)
+    if requested is not None:
+        return min(requested, _MAX_RETRY_AFTER)
+    return _BACKOFF_SECONDS[min(attempt, len(_BACKOFF_SECONDS) - 1)]
+
+
+def _retry_after(error: Exception) -> float | None:
+    headers = getattr(getattr(error, "response", None), "headers", None)
+    if headers is None:
+        return None
+    try:
+        raw = headers.get("retry-after")
+    except AttributeError:
+        return None
+    if raw is None:
+        return None
+    try:
+        return max(0.0, float(raw))
+    except (TypeError, ValueError):
+        return None  # HTTP-date form; fall back to the schedule
 
 
 def _parse_tool_calls(message) -> list[ToolCall]:

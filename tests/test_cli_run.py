@@ -70,6 +70,13 @@ def test_apply_overrides_from_parse_args():
     assert cfg.run.no_cache is True
 
 
+def test_apply_overrides_smoke_and_full_commands():
+    smoke = apply_overrides(_cfg(planner=_PLANNER), parse_args(["smoke"]))
+    assert smoke.run.smoke is True
+    full = apply_overrides(_cfg(planner=_PLANNER), parse_args(["full"]))
+    assert full.run.smoke is False
+
+
 def test_find_config_explicit(tmp_path: Path):
     path = tmp_path / "my.toml"
     path.write_text("[planner]\n", encoding="utf-8")
@@ -108,6 +115,8 @@ def test_find_config_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 class _FakeClient:
     probed: list = []
+    narrative_text = "## 发现\nfake"
+    chat_error = None
 
     def __init__(self, endpoint, role, cache_dir, no_cache, create_fn=None, sleep_fn=None):
         self.endpoint = endpoint
@@ -118,9 +127,17 @@ class _FakeClient:
     def probe(self, messages, *, max_tokens=1):
         _FakeClient.probed.append((self.role, messages, max_tokens))
 
+    def chat(self, messages, *, max_tokens=None, temperature=None, tools=None):
+        from mai_bench2.types import ChatResult, TokenCounts
+
+        if _FakeClient.chat_error:
+            raise RuntimeError(_FakeClient.chat_error)
+        return ChatResult(_FakeClient.narrative_text, TokenCounts(), False, True, [])
+
 
 def _patch_clients_and_suites(monkeypatch, *, planner=None, replyer=None, e2e=None):
     _FakeClient.probed = []
+    _FakeClient.chat_error = None
     monkeypatch.setattr("mai_bench2.cli.ChatClient", _FakeClient)
     if planner is not None:
         monkeypatch.setattr("mai_bench2.cli.run_planner_suite", planner)
@@ -187,7 +204,7 @@ def test_run_suites_skip_ok_exit_0(monkeypatch: pytest.MonkeyPatch):
     assert results[0].status == "skipped"
 
 
-def test_run_suites_probes_planner_for_planner_and_e2e(monkeypatch: pytest.MonkeyPatch):
+def test_run_suites_probes_every_seat_a_requested_suite_needs(monkeypatch: pytest.MonkeyPatch):
     _patch_clients_and_suites(
         monkeypatch,
         planner=lambda *a, **k: SuiteResult("planner", "ok", {}, 1.0, UsageSplit(), 0.0, 1),
@@ -207,7 +224,10 @@ def test_run_suites_probes_planner_for_planner_and_e2e(monkeypatch: pytest.Monke
         _cfg(replyer=_REPLYER, judge=_JUDGE, suite_flag="replyer"),
         root=ROOT,
     )
-    assert _FakeClient.probed == []
+    # the replyer suite needs a judge, so the judge is probed too: a dead judge
+    # used to be discovered only after a full replyer pass had been paid for
+    probed = {role for role, *_ in _FakeClient.probed}
+    assert probed == {"replyer", "judge"}
 
 
 def test_console_run_writes_redacted_artifacts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys):
@@ -256,3 +276,249 @@ def test_console_run_writes_redacted_artifacts(tmp_path: Path, monkeypatch: pyte
     assert summary["persona_id"] == "official"
     assert summary["persona_hex"] == "1a46dd3e9eb3"
     assert "SECRET_KEY" not in json.dumps(summary)
+
+
+def test_console_smoke_command_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys):
+    cfg_path = tmp_path / "config.toml"
+    out_dir = tmp_path / "results"
+    cfg_path.write_text(
+        "\n".join(
+            [
+                "[planner]",
+                'base_url = "http://p/v1"',
+                'api_key = "SECRET_KEY"',
+                'model = "m"',
+                "[run]",
+                f'output_dir = "{out_dir}"',
+                f'cache_dir = "{tmp_path / "cache"}"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    _patch_clients_and_suites(
+        monkeypatch,
+        planner=lambda *a, **k: SuiteResult(
+            "planner", "ok", {"action": 1.0}, 50.0, UsageSplit(), 1.0, 3
+        ),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["mai-bench-2", "smoke", "--config", str(cfg_path)],
+    )
+    with pytest.raises(SystemExit) as exited:
+        console()
+    assert exited.value.code == 0
+    captured = capsys.readouterr()
+    assert "WARNING: this was a smoke run. These numbers are not publishable." in captured.out
+    runs = [path for path in out_dir.iterdir() if path.is_dir()]
+    assert len(runs) == 1
+
+
+def test_console_prints_narrative_when_judge_configured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys):
+    cfg_path = tmp_path / "config.toml"
+    out_dir = tmp_path / "results"
+    cfg_path.write_text(
+        "\n".join(
+            [
+                "[planner]",
+                'base_url = "http://p/v1"',
+                'api_key = "SECRET_KEY"',
+                'model = "m"',
+                "[judge]",
+                'base_url = "http://j/v1"',
+                'api_key = "JUDGE_SECRET"',
+                'model = "judge-m"',
+                "[run]",
+                f'output_dir = "{out_dir}"',
+                f'cache_dir = "{tmp_path / "cache"}"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    _patch_clients_and_suites(
+        monkeypatch,
+        planner=lambda *a, **k: SuiteResult(
+            "planner", "ok", {"action": 1.0}, 50.0, UsageSplit(), 1.0, 3
+        ),
+    )
+    _FakeClient.narrative_text = "## 发现\n规划器没有原生 tool_calls。"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["mai-bench-2", "run", "--config", str(cfg_path)],
+    )
+    with pytest.raises(SystemExit) as exited:
+        console()
+    assert exited.value.code == 0
+    captured = capsys.readouterr()
+    assert "WARNING: this was a smoke run. These numbers are not publishable." in captured.out
+    assert "规划器没有原生 tool_calls" in captured.out
+    assert "JUDGE_SECRET" not in captured.out
+    runs = [path for path in out_dir.iterdir() if path.is_dir()]
+    assert len(runs) == 1
+    narrative = (runs[0] / "narrative.md").read_text(encoding="utf-8")
+    assert "规划器没有原生 tool_calls" in narrative
+    assert "JUDGE_SECRET" not in narrative
+
+
+def test_console_narrative_failure_keeps_exit_0(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys):
+    cfg_path = tmp_path / "config.toml"
+    out_dir = tmp_path / "results"
+    cfg_path.write_text(
+        "\n".join(
+            [
+                "[planner]",
+                'base_url = "http://p/v1"',
+                'api_key = "SECRET_KEY"',
+                'model = "m"',
+                "[judge]",
+                'base_url = "http://j/v1"',
+                'api_key = "JUDGE_SECRET"',
+                'model = "judge-m"',
+                "[run]",
+                f'output_dir = "{out_dir}"',
+                f'cache_dir = "{tmp_path / "cache"}"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    _patch_clients_and_suites(
+        monkeypatch,
+        planner=lambda *a, **k: SuiteResult(
+            "planner", "ok", {"action": 1.0}, 50.0, UsageSplit(), 1.0, 3
+        ),
+    )
+    _FakeClient.chat_error = "network down"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["mai-bench-2", "run", "--config", str(cfg_path)],
+    )
+    with pytest.raises(SystemExit) as exited:
+        console()
+    assert exited.value.code == 0
+    captured = capsys.readouterr()
+    assert "narrative skipped:" in captured.out
+    assert "network down" in captured.out
+    runs = [path for path in out_dir.iterdir() if path.is_dir()]
+    assert not (runs[0] / "narrative.md").exists()
+
+
+def test_suite_usage_is_a_delta_not_a_running_total(monkeypatch: pytest.MonkeyPatch):
+    """A shared client's cumulative snapshot made the e2e row re-report the planner
+    and replyer suites' tokens."""
+    from mai_bench2 import cli
+    from mai_bench2.types import SuiteResult, TokenCounts, UsageSplit
+
+    class Counter:
+        def __init__(self):
+            self.total = 0
+
+        def spend(self, n):
+            self.total += n
+
+        def probe(self, messages, *, max_tokens=1):
+            return None
+
+        def usage_snapshot(self):
+            return TokenCounts(total_tokens=self.total, requests=1)
+
+    planner = Counter()
+    clients = {"planner": planner}
+
+    def fake_planner(cfg, client, persona, *, root, **kwargs):
+        client.spend(100)
+        return SuiteResult(
+            "planner", "ok", {}, 1.0, UsageSplit(planner=client.usage_snapshot()), 0.0, 1
+        )
+
+    def fake_e2e(cfg, planner_client, replyer_client, judge_client, persona, *, root, **kwargs):
+        planner_client.spend(30)
+        return SuiteResult(
+            "e2e", "ok", {}, 1.0, UsageSplit(planner=planner_client.usage_snapshot()), 0.0, 1
+        )
+
+    monkeypatch.setattr(cli, "run_planner_suite", fake_planner)
+    monkeypatch.setattr(cli, "run_e2e_suite", fake_e2e)
+    monkeypatch.setattr(cli, "_build_clients", lambda cfg: clients)
+
+    cfg = _cfg(planner=_PLANNER)
+    cfg.replyer_suite.enabled = False
+    results, _ = run_suites(cfg, root=ROOT, clients=clients)
+
+    by_name = {result.name: result for result in results}
+    assert by_name["planner"].usage.planner.total_tokens == 100
+    assert by_name["e2e"].usage.planner.total_tokens == 30  # not 130
+    # a seat the suite never touched reports zero, never a negative delta
+    assert by_name["planner"].usage.replyer.total_tokens == 0
+    assert by_name["e2e"].usage.judge.total_tokens == 0
+
+
+def test_repeats_average_and_report_stderr(monkeypatch: pytest.MonkeyPatch):
+    """One sample at temperature 0 says nothing about spread."""
+    from mai_bench2 import cli
+    from mai_bench2.types import SuiteResult, UsageSplit
+
+    scores = iter([60.0, 70.0, 80.0])
+
+    def fake_planner(cfg, client, persona, *, root, **kwargs):
+        return SuiteResult("planner", "ok", {}, next(scores), UsageSplit(), 0.0, 3)
+
+    monkeypatch.setattr(cli, "run_planner_suite", fake_planner)
+    monkeypatch.setattr(cli, "_build_clients", lambda cfg: {})
+
+    cfg = _cfg(planner=_PLANNER)
+    cfg.run.repeats = 3
+    cfg.replyer_suite.enabled = False
+    cfg.e2e_suite.enabled = False
+    results, _ = run_suites(cfg, root=ROOT, clients={})
+
+    result = results[0]
+    assert result.subscore_samples == [60.0, 70.0, 80.0]
+    assert result.subscore == 70.0
+    assert abs(result.subscore_stderr - (10.0 / 3**0.5)) < 1e-9
+    assert result.repeats == 3
+
+
+def test_repeat_index_changes_the_cache_key():
+    from mai_bench2.client import ChatClient
+    from mai_bench2.config import EndpointConfig
+
+    client = ChatClient(EndpointConfig("http://x/v1", "k", "m"), "planner", Path("/tmp/x"), False)
+    messages = [{"role": "user", "content": "hi"}]
+    first = client._cache_path(messages, max_tokens=8, temperature=0.0, tools=None)
+    client.set_sample(1)
+    second = client._cache_path(messages, max_tokens=8, temperature=0.0, tools=None)
+    assert first != second
+
+
+def test_dead_judge_fails_the_replyer_suite_before_any_model_call(monkeypatch: pytest.MonkeyPatch):
+    """A 502 judge used to be discovered only after the replyer had written every
+    reply and each judge call had burned its whole retry budget."""
+    ran = []
+
+    class JudgeDown(_FakeClient):
+        def probe(self, messages, *, max_tokens=16):
+            _FakeClient.probed.append((self.role, messages, max_tokens))
+            if self.role == "judge":
+                raise RuntimeError(
+                    "Error code: 502 - all providers, keys, and models were exhausted"
+                )
+
+    _patch_clients_and_suites(
+        monkeypatch,
+        replyer=lambda *a, **k: ran.append("replyer") or SuiteResult(
+            "replyer", "ok", {}, 1.0, UsageSplit(), 0.0, 3
+        ),
+    )
+    monkeypatch.setattr("mai_bench2.cli.ChatClient", JudgeDown)
+
+    results, code = run_suites(
+        _cfg(replyer=_REPLYER, judge=_JUDGE, suite_flag="replyer"), root=ROOT
+    )
+    assert ran == []  # the replyer model was never asked to write anything
+    assert code == 1
+    assert results[0].status == "error"
+    assert results[0].error_message == "judge endpoint unreachable"
+    assert "502" in results[0].error_detail

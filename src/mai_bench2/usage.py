@@ -48,3 +48,15 @@ def add_counts(a: TokenCounts, b: TokenCounts) -> TokenCounts:
         cached_requests=a.cached_requests + b.cached_requests,
         usage_missing=a.usage_missing + b.usage_missing,
     )
+
+
+def subtract_counts(after: TokenCounts, before: TokenCounts) -> TokenCounts:
+    return TokenCounts(
+        prompt_tokens=after.prompt_tokens - before.prompt_tokens,
+        completion_tokens=after.completion_tokens - before.completion_tokens,
+        reasoning_tokens=after.reasoning_tokens - before.reasoning_tokens,
+        total_tokens=after.total_tokens - before.total_tokens,
+        requests=after.requests - before.requests,
+        cached_requests=after.cached_requests - before.cached_requests,
+        usage_missing=after.usage_missing - before.usage_missing,
+    )
