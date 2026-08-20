@@ -13,8 +13,8 @@ JUDGE_RUBRIC = (
     "5 中性，谁说都行；3 明显不像；0 与人设冲突。\n"
     "style 表达风格：10 平淡简短、贴近贴吧知乎微博；8 基本合适但略长或略修辞；"
     "5 普通助手腔；3 浮夸或长篇大论；0 完全不是这个风格。\n"
-    "grounding 是否只用 reference_info、不编造：10 全部有据；8 有一处无关紧要的发挥；"
-    "5 有一处没有依据的断言；3 多处编造；0 与 reference_info 矛盾。\n"
+    "grounding 是否只用 reply_reference / 当前思考、不编造：10 全部有据；8 有一处无关紧要的发挥；"
+    "5 有一处没有依据的断言；3 多处编造；0 与 reply_reference / 当前思考 矛盾。\n"
     "group_chat 是否像 QQ 群里的一句话：10 完全自然；8 基本自然；5 像私聊或客服；"
     "3 像公告；0 完全不像聊天。\n"
     "no_planner_voice 是否混入了工具口吻或舞台指示：10 完全没有；5 有轻微痕迹；"
@@ -117,8 +117,8 @@ def _judge_messages(persona, item, visible_reply: str) -> list[dict]:
         f"\n表达风格：{persona.reply_style}"
         f"\n聊天提示：{chat_prompt}"
         f"\n可见聊天：\n{_format_log(messages)}"
-        f"\nreply_guide：{handoff.get('reply_guide') or ''}"
-        f"\nreference_info：{handoff.get('reference_info') or ''}"
+        f"\nreply_reference：{handoff.get('reply_reference') or ''}"
+        f"\nanalysis：{handoff.get('analysis') or ''}"
         f"\n可见回复：{visible_reply}"
     )
     return [{"role": "user", "content": prompt}]
