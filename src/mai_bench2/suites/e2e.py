@@ -113,6 +113,7 @@ def run_e2e_suite(
             row: dict | None = None
             if trace.replied:
                 work = dict(item)
+                work["target_t"] = int(item.get("target_t") or 0) + int(trace.total_waited)
                 work["oracle_handoff"] = _handoff_from_trace(trace)
                 visible = generate_reply(replyer_client, persona, work, prompts)
                 produced = True
