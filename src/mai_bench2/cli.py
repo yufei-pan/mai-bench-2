@@ -15,6 +15,7 @@ from mai_bench2.config import (
     load_config,
     requested_suites,
 )
+from mai_bench2.digest import build_digest, format_digest
 from mai_bench2.gold import gold_item_count
 from mai_bench2.headlines import compute_headlines
 from mai_bench2.narrative import generate_narrative
@@ -314,21 +315,23 @@ def console(argv: list[str] | None = None) -> None:
         table = render_table(
             results, headlines, persona=persona, smoke=cfg.run.smoke, prompts=prompts
         )
-        narrative = generate_narrative(
-            clients.get("judge"),
-            cfg=cfg,
-            persona=persona,
-            results=results,
-            table=table,
-            headlines=headlines,
-        )
+        digest = build_digest(results, headlines, smoke=cfg.run.smoke)
+        body = format_digest(digest)
+        skip_line = None
+        judge = clients.get("judge")
+        if judge is not None:
+            narrative = generate_narrative(judge, digest)
+            if narrative.text:
+                text = narrative.text
+                body = text if text.endswith("\n") else f"{text}\n"
+            elif narrative.error_message:
+                skip_line = f"narrative skipped: {narrative.error_message}"
         print(table, end="")
-        if narrative.text:
-            body = narrative.text if narrative.text.endswith("\n") else f"{narrative.text}\n"
+        if skip_line:
             print()
-            print(body, end="")
-        elif narrative.error_message:
-            print(f"narrative skipped: {narrative.error_message}")
+            print(skip_line)
+        print()
+        print(body, end="")
         stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%M%SZ")
         out_dir = Path(cfg.run.output_dir).expanduser() / stamp
         write_artifacts(
@@ -339,7 +342,8 @@ def console(argv: list[str] | None = None) -> None:
             results=results,
             headlines=headlines,
             table=table,
-            narrative=narrative.text,
+            narrative=body,
+            digest=digest,
         )
         sys.exit(code)
     except ConfigError as exc:

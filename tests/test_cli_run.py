@@ -115,7 +115,7 @@ def test_find_config_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 class _FakeClient:
     probed: list = []
-    narrative_text = "## 发现\nfake"
+    narrative_text = "含义\n- 规划器没有原生 tool_calls。\n\n最差样本：没有需要点名的失败项。\n"
     chat_error = None
 
     def __init__(self, endpoint, role, cache_dir, no_cache, create_fn=None, sleep_fn=None):
@@ -276,6 +276,10 @@ def test_console_run_writes_redacted_artifacts(tmp_path: Path, monkeypatch: pyte
     assert summary["persona_id"] == "official"
     assert summary["persona_hex"] == "77be5c59f150"
     assert "SECRET_KEY" not in json.dumps(summary)
+    assert "含义" in captured.out
+    assert (runs[0] / "digest.json").is_file()
+    assert (runs[0] / "narrative.md").is_file()
+    assert "含义" in (runs[0] / "narrative.md").read_text(encoding="utf-8")
 
 
 def test_console_smoke_command_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys):
@@ -402,7 +406,9 @@ def test_console_narrative_failure_keeps_exit_0(tmp_path: Path, monkeypatch: pyt
     assert "narrative skipped:" in captured.out
     assert "network down" in captured.out
     runs = [path for path in out_dir.iterdir() if path.is_dir()]
-    assert not (runs[0] / "narrative.md").exists()
+    assert "含义" in captured.out
+    assert (runs[0] / "narrative.md").is_file()
+    assert "含义" in (runs[0] / "narrative.md").read_text(encoding="utf-8")
 
 
 def test_suite_usage_is_a_delta_not_a_running_total(monkeypatch: pytest.MonkeyPatch):

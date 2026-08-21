@@ -50,7 +50,9 @@ def test_readme_covers_install_suites_gating_and_warnings():
     assert "including tool JSON written" in text
     assert "into the assistant body" in text
     assert "writes tool JSON in text instead of native" not in text
-    assert "Tool JSON written in text is idle" in text
+    assert "digest.json" in lower
+    assert "15-25" in text
+    assert "polishes the digest" in text
 
 
 def test_example_config_seats_env_smoke_and_temps():
