@@ -286,3 +286,69 @@ def test_missing_extras_do_not_raise():
     )
     assert digest["worst"][0]["id"] == "p-bare"
     assert digest["worst"][0]["tools_called"] == []
+
+
+from mai_bench2.digest import build_digest, format_digest
+
+
+def test_format_digest_two_blocks_no_markdown_headers():
+    digest = build_digest(
+        [
+            SuiteResult(
+                "planner",
+                "ok",
+                {"action": 0.625, "wait_band": 0.0, "contract_fail": 0.0},
+                62.5,
+                UsageSplit(),
+                1.0,
+                8,
+                predictions=[
+                    _pred("p-amb-002", "none", "reply", {"accepted": ["none"], "tools_called": ["reply"]}),
+                ],
+            )
+        ],
+        HeadlineOutcome({}, ["smoke"]),
+        smoke=True,
+    )
+    text = format_digest(digest)
+    assert text.endswith("\n")
+    assert "##" not in text
+    assert "含义" in text.splitlines()[0]
+    assert "最差样本" in text
+    assert "- p-amb-002  none→reply  本应保持沉默（none），规划器却原生 reply。真实群里麦麦会抢话。" in text
+    assert text.count("\n") <= 25
+    assert all(len(line) <= 88 or line.startswith("  ") for line in text.splitlines())
+
+
+def test_format_digest_empty_worst():
+    digest = build_digest(
+        [_suite("planner", native={"action": 1.0, "contract_fail": 0.0}, n=3)],
+        HeadlineOutcome({}, []),
+        smoke=False,
+    )
+    text = format_digest(digest)
+    assert "最差样本：没有需要点名的失败项。" in text
+
+
+def test_format_digest_replyer_uses_tag_not_full_pred():
+    digest = {
+        "smoke": False,
+        "headline_reasons": [],
+        "meanings": ["回复器分数评价的是已经决定回复之后的文案，不说明规划器该不该说话。"],
+        "suites": [],
+        "worst": [
+            {
+                "suite": "replyer",
+                "id": "r-low-001",
+                "gold": "reply",
+                "pred": "一段很长的回复" * 10,
+                "tag": "low_in_character",
+                "meaning": "回复人设贴合偏低。",
+                "tools_called": [],
+                "quote": "一段很长的回复",
+            }
+        ],
+    }
+    text = format_digest(digest)
+    assert "- r-low-001  low_in_character  回复人设贴合偏低。  一段很长的回复" in text
+    assert "一段很长的回复" * 10 not in text
