@@ -294,3 +294,37 @@ def test_max_attempts_is_configurable(tmp_path: Path):
         client.chat([{"role": "user", "content": "x"}])
     assert attempts["n"] == 5
     assert sleeps == [2.0, 8.0, 20.0, 45.0]
+
+
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
+
+def test_cache_writes_from_two_threads(tmp_path: Path):
+    barrier = threading.Barrier(2)
+
+    def create(**kwargs):
+        barrier.wait(timeout=2)
+        text = kwargs["messages"][0]["content"]
+        return _resp(text=text)
+
+    client = ChatClient(
+        EndpointConfig("http://x/v1", "k", "m"),
+        "planner",
+        tmp_path,
+        no_cache=False,
+        create_fn=create,
+    )
+
+    def one(text):
+        return client.chat([{"role": "user", "content": text}])
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        fa = pool.submit(one, "alpha")
+        fb = pool.submit(one, "beta")
+        ra, rb = fa.result(timeout=5), fb.result(timeout=5)
+    assert {ra.text, rb.text} == {"alpha", "beta"}
+    files = list((tmp_path / "llm").glob("*.json"))
+    assert len(files) == 2
+    snap = client.usage_snapshot()
+    assert snap.requests >= 0

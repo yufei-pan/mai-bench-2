@@ -41,6 +41,7 @@ class ChatClient:
         self._sleep = sleep_fn
         self._usage = TokenCounts()
         self._usage_lock = threading.Lock()
+        self._cache_lock = threading.Lock()
         self._sample = 0
 
         if create_fn is None:
@@ -117,18 +118,18 @@ class ChatClient:
         )
 
         if not self._no_cache:
-            cache_path.parent.mkdir(parents=True, exist_ok=True)
-            cache_path.write_text(
-                json.dumps(
-                    {
-                        "text": text,
-                        "usage": asdict(usage),
-                        "tool_calls": [asdict(call) for call in tool_calls],
-                    },
-                    sort_keys=True,
-                    separators=(",", ":"),
-                )
+            payload = json.dumps(
+                {
+                    "text": text,
+                    "usage": asdict(usage),
+                    "tool_calls": [asdict(call) for call in tool_calls],
+                },
+                sort_keys=True,
+                separators=(",", ":"),
             )
+            with self._cache_lock:
+                cache_path.parent.mkdir(parents=True, exist_ok=True)
+                cache_path.write_text(payload)
 
         return result
 
