@@ -222,6 +222,22 @@ def test_replyer_ticks_every_item_when_all_calls_fail():
     assert {suite for suite, _ in progress.ticks} == {"replyer"}
 
 
+def test_replyer_concurrency_two_ticks_all_failures():
+    progress = RecordingProgress()
+    cfg = _cfg(replyer=_REPLYER, judge=_JUDGE)
+    cfg.run.concurrency = 2
+    run_replyer_suite(
+        cfg,
+        BoomClient(),
+        BoomClient(),
+        load_persona("official", root=ROOT),
+        root=ROOT,
+        progress=progress,
+    )
+    assert len(progress.ticks) == 8
+    assert {suite for suite, _ in progress.ticks} == {"replyer"}
+
+
 def test_e2e_ticks_every_item_when_all_calls_fail():
     progress = RecordingProgress()
     run_e2e_suite(
