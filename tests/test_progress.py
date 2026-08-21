@@ -57,6 +57,10 @@ class RecordingProgress:
         finally:
             self.ticks.append((suite, item_id))
 
+    def complete(self, suite: str, item_id: str) -> None:
+        with self.item(suite, item_id):
+            pass
+
 
 class BoomClient:
     def chat(self, messages, *, max_tokens=None, temperature=None, tools=None):
@@ -137,6 +141,20 @@ def test_make_progress_writes_nothing_when_not_a_tty():
         progress.set_sample(1)
         with progress.item("planner", "p-amb-002"):
             pass
+    assert stream.getvalue() == ""
+
+
+def test_complete_is_item_then_advance():
+    progress = RecordingProgress()
+    progress.complete("planner", "p-amb-002")
+    assert progress.ticks == [("planner", "p-amb-002")]
+
+
+def test_run_progress_complete_is_silent_when_not_a_tty():
+    stream = StringIO()
+    progress = make_progress(8, stream=stream, repeats=1)
+    with progress:
+        progress.complete("planner", "p-amb-002")
     assert stream.getvalue() == ""
 
 
