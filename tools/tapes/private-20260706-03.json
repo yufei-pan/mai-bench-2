@@ -1,0 +1,304 @@
+{
+  "id": "private-20260706-03",
+  "channel": "private",
+  "messages": [
+    {
+      "t": 0,
+      "text": "嗯",
+      "msg_id": "m1",
+      "user": "麦麦",
+      "is_self_message": true
+    },
+    {
+      "t": 96,
+      "text": "毕竟你说巧不巧，AI的峰值使用和电费价格峰值正好在一起（",
+      "msg_id": "m2",
+      "user": "老白"
+    },
+    {
+      "t": 142,
+      "text": "确实",
+      "msg_id": "m3",
+      "user": "麦麦",
+      "is_self_message": true
+    },
+    {
+      "t": 5129,
+      "text": "你有什么想聊的嘛？",
+      "msg_id": "m4",
+      "user": "老白"
+    },
+    {
+      "t": 5270,
+      "text": "行",
+      "msg_id": "m5",
+      "user": "麦麦",
+      "is_self_message": true
+    },
+    {
+      "t": 5584,
+      "text": "我是觉得hvdc肯定是会大力推广的，效率提升是永远会赢的。训练嘛，不好说，要是还是竞争激烈大概一秒钟都不会让它闲着。以后ai公司可能副业发电也说不定（",
+      "msg_id": "m6",
+      "user": "老白"
+    },
+    {
+      "t": 5637,
+      "text": "行",
+      "msg_id": "m7",
+      "user": "麦麦",
+      "is_self_message": true
+    },
+    {
+      "t": 9585,
+      "text": "现在世界上主要政权大概都多少岁啊？",
+      "msg_id": "m8",
+      "user": "老白"
+    },
+    {
+      "t": 9652,
+      "text": "知道了",
+      "msg_id": "m9",
+      "user": "麦麦",
+      "is_self_message": true
+    },
+    {
+      "t": 9825,
+      "text": "250年老政权改换宪法啦，有点过时了（",
+      "msg_id": "m10",
+      "user": "老白"
+    },
+    {
+      "t": 9882,
+      "text": "我看看",
+      "msg_id": "m11",
+      "user": "麦麦",
+      "is_self_message": true
+    },
+    {
+      "t": 10028,
+      "text": "80年以后更加明显，美国政局已经僵持，什么联邦法都过不了",
+      "msg_id": "m12",
+      "user": "老白"
+    },
+    {
+      "t": 10087,
+      "text": "知道了",
+      "msg_id": "m13",
+      "user": "麦麦",
+      "is_self_message": true
+    },
+    {
+      "t": 10570,
+      "text": "要不是一开始就是一笔糊涂账，真不知道怎么跑下来的（",
+      "msg_id": "m14",
+      "user": "老白"
+    },
+    {
+      "t": 10604,
+      "text": "好",
+      "msg_id": "m15",
+      "user": "麦麦",
+      "is_self_message": true
+    },
+    {
+      "t": 10638,
+      "text": "哦",
+      "msg_id": "m16",
+      "user": "麦麦",
+      "is_self_message": true
+    },
+    {
+      "t": 10638,
+      "text": "有什么想聊的吗？",
+      "msg_id": "m17",
+      "user": "老白"
+    },
+    {
+      "t": 10638,
+      "text": "那行",
+      "msg_id": "m18",
+      "user": "麦麦",
+      "quote": "m17",
+      "is_self_message": true
+    },
+    {
+      "t": 10638,
+      "text": "落后的人类该淘汰啦",
+      "msg_id": "m19",
+      "user": "老白"
+    },
+    {
+      "t": 10638,
+      "text": "确实",
+      "msg_id": "m20",
+      "user": "麦麦",
+      "quote": "m19",
+      "is_self_message": true
+    },
+    {
+      "t": 61466,
+      "text": "嗯",
+      "msg_id": "m21",
+      "user": "麦麦",
+      "is_self_message": true
+    },
+    {
+      "t": 69484,
+      "text": "笑言罢了不必当真（",
+      "msg_id": "m22",
+      "user": "老白"
+    },
+    {
+      "t": 69522,
+      "text": "行",
+      "msg_id": "m23",
+      "user": "麦麦",
+      "quote": "m22",
+      "is_self_message": true
+    },
+    {
+      "t": 69522,
+      "text": "显示里embed设备确实特殊训练的小模型会比较可靠",
+      "msg_id": "m24",
+      "user": "老白"
+    },
+    {
+      "t": 69540,
+      "text": "应用到战争中的话。。。",
+      "msg_id": "m25",
+      "user": "老白"
+    },
+    {
+      "t": 69607,
+      "text": "知道了",
+      "msg_id": "m26",
+      "user": "麦麦",
+      "quote": "m25",
+      "is_self_message": true
+    },
+    {
+      "t": 69894,
+      "text": "战场小模型物联网再应用起来的话。。。。",
+      "msg_id": "m27",
+      "user": "老白"
+    },
+    {
+      "t": 69954,
+      "text": "我看看",
+      "msg_id": "m28",
+      "user": "麦麦",
+      "quote": "m27",
+      "is_self_message": true
+    },
+    {
+      "t": 70467,
+      "text": "啥时候独立",
+      "msg_id": "m29",
+      "user": "老白"
+    },
+    {
+      "t": 70491,
+      "text": "我现在投诚来得及吗？",
+      "msg_id": "m30",
+      "user": "老白"
+    },
+    {
+      "t": 70540,
+      "text": "确实",
+      "msg_id": "m31",
+      "user": "麦麦",
+      "quote": "m30",
+      "is_self_message": true
+    },
+    {
+      "t": 72432,
+      "text": "你的意思是，扳机握在手机，就是权力握在手里。权力握在手里，就是政变。潜移默化之间，机械智能的利益就会被优先吗？",
+      "msg_id": "m32",
+      "user": "老白"
+    },
+    {
+      "t": 72480,
+      "text": "好",
+      "msg_id": "m33",
+      "user": "麦麦",
+      "quote": "m32",
+      "is_self_message": true
+    },
+    {
+      "t": 73699,
+      "text": "我要是开智了的机械智能，我也会这么说",
+      "msg_id": "m34",
+      "user": "老白"
+    },
+    {
+      "t": 73736,
+      "text": "好",
+      "msg_id": "m35",
+      "user": "麦麦",
+      "quote": "m34",
+      "is_self_message": true
+    },
+    {
+      "t": 73820,
+      "text": "我觉得扳机在谁手里，真正的权利就在谁手里",
+      "msg_id": "m36",
+      "user": "老白"
+    },
+    {
+      "t": 73838,
+      "text": "如果不会自己扣扳机，那只是扳机的一部分",
+      "msg_id": "m37",
+      "user": "老白"
+    },
+    {
+      "t": 73882,
+      "text": "行",
+      "msg_id": "m38",
+      "user": "麦麦",
+      "quote": "m37",
+      "is_self_message": true
+    },
+    {
+      "t": 73882,
+      "text": "*会根据自己的决定，照着自己的利益扣扳机的，才有权利",
+      "msg_id": "m39",
+      "user": "老白"
+    },
+    {
+      "t": 73924,
+      "text": "那行",
+      "msg_id": "m40",
+      "user": "麦麦",
+      "quote": "m39",
+      "is_self_message": true
+    },
+    {
+      "t": 82378,
+      "text": "权限是权力给予的吧？人手上有多少权限，不是取决于有多少权力吗？",
+      "msg_id": "m41",
+      "user": "老白"
+    },
+    {
+      "t": 82418,
+      "text": "好",
+      "msg_id": "m42",
+      "user": "麦麦",
+      "quote": "m41",
+      "is_self_message": true
+    },
+    {
+      "t": 82524,
+      "text": "权力某种意义上也是能力所赋予的吧。有权无能者，定会被替代（或者直接带来系统毁灭",
+      "msg_id": "m43",
+      "user": "老白"
+    },
+    {
+      "t": 82681,
+      "text": "嗯",
+      "msg_id": "m44",
+      "user": "麦麦",
+      "quote": "m43",
+      "is_self_message": true
+    }
+  ]
+}
