@@ -70,6 +70,24 @@ def test_apply_overrides_from_parse_args():
     assert cfg.run.no_cache is True
 
 
+def test_apply_overrides_concurrency_from_flag():
+    args = parse_args(["run", "--concurrency", "8"])
+    cfg = apply_overrides(_cfg(planner=_PLANNER), args)
+    assert cfg.run.concurrency == 8
+
+
+def test_apply_overrides_concurrency_zero_becomes_one():
+    args = parse_args(["run", "--concurrency", "0"])
+    cfg = apply_overrides(_cfg(planner=_PLANNER), args)
+    assert cfg.run.concurrency == 1
+
+
+def test_apply_overrides_concurrency_negative_becomes_one():
+    args = parse_args(["run", "--concurrency", "-3"])
+    cfg = apply_overrides(_cfg(planner=_PLANNER), args)
+    assert cfg.run.concurrency == 1
+
+
 def test_apply_overrides_smoke_and_full_commands():
     smoke = apply_overrides(_cfg(planner=_PLANNER), parse_args(["smoke"]))
     assert smoke.run.smoke is True

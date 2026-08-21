@@ -9,6 +9,7 @@ def test_parse_run_defaults():
     assert ns.suite is None
     assert ns.persona is None
     assert ns.no_cache is False
+    assert ns.concurrency is None
 
 
 def test_parse_run_flags():
@@ -52,6 +53,16 @@ def test_smoke_console_prepends_smoke(monkeypatch):
     with pytest.raises(SystemExit):
         cli_mod.smoke_console()
     assert captured["argv"] == ["smoke", "--suite", "planner"]
+
+
+def test_parse_concurrency_flag():
+    ns = parse_args(["run", "--concurrency", "8"])
+    assert ns.concurrency == 8
+
+
+def test_parse_concurrency_on_full_command():
+    ns = parse_args(["full", "--concurrency", "4"])
+    assert ns.concurrency == 4
 
 
 def test_full_console_prepends_full(monkeypatch):

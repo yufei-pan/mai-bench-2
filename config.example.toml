@@ -35,6 +35,7 @@ cache_dir = "~/.cache/mai-bench-2"
 output_dir = "./results"
 no_cache = false
 repeats = 1
+concurrency = 1
 
 [suites.planner]
 enabled = true

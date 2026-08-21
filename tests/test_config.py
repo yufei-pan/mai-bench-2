@@ -31,3 +31,17 @@ def test_suite_flag_keeps_e2e_even_if_unrunnable(tmp_path: Path):
     cfg = load_config(path)
     cfg.suite_flag = "e2e"
     assert requested_suites(cfg) == ["e2e"]
+
+
+def test_load_run_concurrency(tmp_path: Path):
+    path = tmp_path / "c.toml"
+    path.write_text("[run]\nconcurrency = 8\n", encoding="utf-8")
+    cfg = load_config(path)
+    assert cfg.run.concurrency == 8
+
+
+def test_load_run_concurrency_defaults_to_1(tmp_path: Path):
+    path = tmp_path / "c.toml"
+    path.write_text("[run]\nsmoke = true\n", encoding="utf-8")
+    cfg = load_config(path)
+    assert cfg.run.concurrency == 1
