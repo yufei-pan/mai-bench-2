@@ -96,3 +96,31 @@ def test_is_bot_address():
     assert is_bot_address(M(0, "m1", "q", "麦麦 你在吗", card="x"))
     assert not is_bot_address(M(0, "m1", "q", "麦麦最近话有点多", card="x"))
     assert not is_bot_address(M(0, "m1", "q", "草", card="x"))
+
+
+def test_contextualize_pad_starts_at_t_zero():
+    item = Item("p-addr-001", "group", _tail(), 0, "reply", reply_msg_id="m1")
+    out = contextualize(item, [_tape(90)])
+    assert out.messages[0].t == 0
+
+
+def test_contextualize_cycled_quotes_stay_on_same_copy():
+    tape = Tape(
+        id="q-cycle",
+        channel="group",
+        messages=[
+            M(0, "a", "q1", "先说", card="卡0"),
+            M(10, "b", "q2", "回那句", card="卡1", quote="a"),
+        ],
+    )
+    item = Item("p-cycle-001", "group", _tail(), 0, "reply", reply_msg_id="m1")
+    out = contextualize(item, [tape])
+    pad = [m for m in out.messages if m.t <= out.target_t][:-1]
+    quoting = [(i, m) for i, m in enumerate(pad) if m.quote]
+    assert len(quoting) > 1
+    for i, message in quoting:
+        if i == 0:
+            continue
+        assert message.text == "回那句"
+        assert pad[i - 1].text == "先说"
+        assert message.quote == pad[i - 1].msg_id

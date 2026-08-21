@@ -187,6 +187,19 @@ def _offset(messages: list[M], delta: int) -> list[M]:
     return out
 
 
+def _uniquify_copy(messages: list[M], cycle: int) -> list[M]:
+    local: dict[str, str] = {}
+    for message in messages:
+        if message.msg_id:
+            new_id = f"{message.msg_id}#{cycle}"
+            local[message.msg_id] = new_id
+            message.msg_id = new_id
+    for message in messages:
+        if message.quote:
+            message.quote = local.get(message.quote, message.quote)
+    return messages
+
+
 def _take_pad(item_id: str, channel: str, need: int, tapes: list[Tape]) -> list[M]:
     pool = [t for t in tapes if t.channel == channel]
     if not pool:
@@ -198,7 +211,7 @@ def _take_pad(item_id: str, channel: str, need: int, tapes: list[Tape]) -> list[
         tape = pool[(start + guard) % len(pool)]
         base = (chain[-1].t + 120) if chain else 0
         first = tape.messages[0].t if tape.messages else 0
-        chain.extend(_offset(tape.messages, base - first))
+        chain.extend(_uniquify_copy(_offset(tape.messages, base - first), guard))
         guard += 1
         if guard > 30:
             break
@@ -219,6 +232,9 @@ def contextualize(item: Item, tapes: list[Tape]) -> Item:
         return item
     pad = _take_pad(item.id, item.channel, need, tapes)
     if pad:
+        origin = pad[0].t
+        for message in pad:
+            message.t -= origin
         shift_before = pad[-1].t + _GAP - (before[0].t if before else 0)
     else:
         shift_before = 0
@@ -232,6 +248,7 @@ def contextualize(item: Item, tapes: list[Tape]) -> Item:
             n += 1
             mapping[message.msg_id] = f"m{n}"
             message.msg_id = mapping[message.msg_id]
+    for message in merged:
         if message.quote:
             message.quote = mapping.get(message.quote, message.quote)
     reply = mapping.get(item.reply_msg_id, item.reply_msg_id) if item.reply_msg_id else None
