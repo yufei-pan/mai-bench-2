@@ -62,7 +62,7 @@ def test_missing_seat_ok_without_suite_flag():
 
 
 def test_apply_overrides_from_parse_args():
-    args = parse_args(["run", "--suite", "replyer", "--full", "--persona", "official", "--no-cache"])
+    args = parse_args(["replyer", "--full", "--persona", "official", "--no-cache"])
     cfg = apply_overrides(_cfg(planner=_PLANNER), args)
     assert cfg.suite_flag == "replyer"
     assert cfg.run.smoke is False
@@ -70,28 +70,39 @@ def test_apply_overrides_from_parse_args():
     assert cfg.run.no_cache is True
 
 
+def test_apply_overrides_all_clears_suite_flag():
+    cfg = apply_overrides(_cfg(planner=_PLANNER), parse_args(["all"]))
+    assert cfg.suite_flag is None
+
+
+def test_apply_overrides_default_suite_is_all():
+    cfg = apply_overrides(_cfg(planner=_PLANNER), parse_args([]))
+    assert cfg.suite_flag is None
+    assert cfg.run.smoke is True
+
+
 def test_apply_overrides_concurrency_from_flag():
-    args = parse_args(["run", "--concurrency", "8"])
+    args = parse_args(["--concurrency", "8"])
     cfg = apply_overrides(_cfg(planner=_PLANNER), args)
     assert cfg.run.concurrency == 8
 
 
 def test_apply_overrides_concurrency_zero_becomes_one():
-    args = parse_args(["run", "--concurrency", "0"])
+    args = parse_args(["--concurrency", "0"])
     cfg = apply_overrides(_cfg(planner=_PLANNER), args)
     assert cfg.run.concurrency == 1
 
 
 def test_apply_overrides_concurrency_negative_becomes_one():
-    args = parse_args(["run", "--concurrency", "-3"])
+    args = parse_args(["--concurrency", "-3"])
     cfg = apply_overrides(_cfg(planner=_PLANNER), args)
     assert cfg.run.concurrency == 1
 
 
-def test_apply_overrides_smoke_and_full_commands():
-    smoke = apply_overrides(_cfg(planner=_PLANNER), parse_args(["smoke"]))
+def test_apply_overrides_smoke_and_full_flags():
+    smoke = apply_overrides(_cfg(planner=_PLANNER, run=RunConfig(smoke=False)), parse_args(["--smoke"]))
     assert smoke.run.smoke is True
-    full = apply_overrides(_cfg(planner=_PLANNER), parse_args(["full"]))
+    full = apply_overrides(_cfg(planner=_PLANNER), parse_args(["--full"]))
     assert full.run.smoke is False
 
 
@@ -274,7 +285,7 @@ def test_console_run_writes_redacted_artifacts(tmp_path: Path, monkeypatch: pyte
     monkeypatch.setattr(
         sys,
         "argv",
-        ["mai-bench-2", "run", "--config", str(cfg_path)],
+        ["mai-bench-2", "--config", str(cfg_path)],
     )
     with pytest.raises(SystemExit) as exited:
         console()
@@ -326,7 +337,7 @@ def test_console_smoke_command_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(
         sys,
         "argv",
-        ["mai-bench-2", "smoke", "--config", str(cfg_path)],
+        ["mai-bench-2", "--smoke", "--config", str(cfg_path)],
     )
     with pytest.raises(SystemExit) as exited:
         console()
@@ -368,7 +379,7 @@ def test_console_prints_narrative_when_judge_configured(tmp_path: Path, monkeypa
     monkeypatch.setattr(
         sys,
         "argv",
-        ["mai-bench-2", "run", "--config", str(cfg_path)],
+        ["mai-bench-2", "--config", str(cfg_path)],
     )
     with pytest.raises(SystemExit) as exited:
         console()
@@ -415,7 +426,7 @@ def test_console_narrative_failure_keeps_exit_0(tmp_path: Path, monkeypatch: pyt
     monkeypatch.setattr(
         sys,
         "argv",
-        ["mai-bench-2", "run", "--config", str(cfg_path)],
+        ["mai-bench-2", "--config", str(cfg_path)],
     )
     with pytest.raises(SystemExit) as exited:
         console()

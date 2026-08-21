@@ -104,6 +104,8 @@ def apply_overrides(cfg: AppConfig, args) -> AppConfig:
     run = cfg.run
     if args.full:
         run = replace(run, smoke=False)
+    elif getattr(args, "smoke_flag", False):
+        run = replace(run, smoke=True)
     if args.persona is not None:
         run = replace(run, persona=args.persona)
     if getattr(args, "prompts", None) is not None:
@@ -114,7 +116,8 @@ def apply_overrides(cfg: AppConfig, args) -> AppConfig:
         run = replace(run, repeats=max(1, int(args.repeats)))
     if getattr(args, "concurrency", None) is not None:
         run = replace(run, concurrency=max(1, int(args.concurrency)))
-    suite_flag = args.suite if args.suite is not None else cfg.suite_flag
+    suite = getattr(args, "suite", None)
+    suite_flag = None if suite in (None, "all") else suite
     return replace(cfg, run=run, suite_flag=suite_flag)
 
 

@@ -43,33 +43,26 @@ _SEAT_REQUIRED = {
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="mai-bench-2")
-    subparsers = parser.add_subparsers(dest="command")
-    run = subparsers.add_parser("run", help="Run benchmark suites (smoke unless --full)")
-    _add_run_flags(run, include_full=True)
-    smoke = subparsers.add_parser("smoke", help="Run smoke prefix (not publishable)")
-    _add_run_flags(smoke, include_full=False)
-    full = subparsers.add_parser("full", help="Run full gold headlines")
-    _add_run_flags(full, include_full=False)
-    args = parser.parse_args(argv)
-    if args.command == "full":
-        args.full = True
-    elif args.command == "smoke":
-        args.full = False
-    return args
-
-
-def _add_run_flags(parser: argparse.ArgumentParser, *, include_full: bool) -> None:
-    parser.add_argument("--config", default=None, help="Path to config.toml")
-    if include_full:
-        parser.add_argument("--full", action="store_true", help="Run full gold headlines")
-    else:
-        parser.set_defaults(full=False)
     parser.add_argument(
-        "--suite",
-        choices=("planner", "replyer", "e2e"),
-        default=None,
-        help="Run a single suite",
+        "suite",
+        nargs="?",
+        choices=("planner", "replyer", "e2e", "all"),
+        default="all",
+        help="Suite to run (default: all)",
     )
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--smoke",
+        action="store_true",
+        dest="smoke_flag",
+        help="Run smoke prefix (not publishable)",
+    )
+    mode.add_argument(
+        "--full",
+        action="store_true",
+        help="Run full gold headlines",
+    )
+    parser.add_argument("--config", default=None, help="Path to config.toml")
     parser.add_argument("--persona", default=None, help="Persona id or filesystem path")
     parser.add_argument(
         "--prompts",
@@ -94,6 +87,7 @@ def _add_run_flags(parser: argparse.ArgumentParser, *, include_full: bool) -> No
         default=None,
         help="Gold items in flight per suite (default 1)",
     )
+    return parser.parse_args(argv)
 
 
 def find_config(explicit: str | None) -> Path:
@@ -320,8 +314,6 @@ def _build_clients(cfg: AppConfig) -> dict[str, ChatClient]:
 
 def console(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
-    if args.command not in {"run", "smoke", "full"}:
-        sys.exit(0)
     try:
         package_root = Path(__file__).resolve().parents[2]
         path = find_config(args.config)
@@ -386,8 +378,8 @@ def console(argv: list[str] | None = None) -> None:
 
 
 def smoke_console() -> None:
-    console(["smoke", *sys.argv[1:]])
+    console(["--smoke", *sys.argv[1:]])
 
 
 def full_console() -> None:
-    console(["full", *sys.argv[1:]])
+    console(["--full", *sys.argv[1:]])
