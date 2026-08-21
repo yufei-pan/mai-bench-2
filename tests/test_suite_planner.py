@@ -124,6 +124,8 @@ def test_planner_predictions_include_assistant_text():
     assert extra["native_tool_call_count"] == 0
     assert extra["tools_called"] == []
     assert "wait" in extra["assistant_text"]
+    assert result.predictions[0].gold in extra["accepted"]
+    assert isinstance(extra["accepted"], list)
 
 
 class SecondItemBoom:

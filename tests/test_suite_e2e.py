@@ -273,6 +273,8 @@ def test_e2e_predictions_include_assistant_text():
     assert extra["planner_action"] == "none"
     assert extra["native_tool_call_count"] == 0
     assert "reply" in extra["assistant_text"]
+    assert result.predictions[0].gold in extra["accepted"]
+    assert isinstance(extra["accepted"], list)
 
 
 def test_e2e_replyer_prompt_includes_nickname_and_planner_handoff():
