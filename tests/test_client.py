@@ -328,3 +328,152 @@ def test_cache_writes_from_two_threads(tmp_path: Path):
     assert len(files) == 2
     snap = client.usage_snapshot()
     assert snap.requests >= 0
+
+
+def test_http_limit_one_serializes_create(tmp_path: Path):
+    inside = 0
+    max_inside = 0
+    lock = threading.Lock()
+    first_in = threading.Event()
+    release = threading.Event()
+
+    def create(**kwargs):
+        nonlocal inside, max_inside
+        with lock:
+            inside += 1
+            max_inside = max(max_inside, inside)
+        first_in.set()
+        assert release.wait(timeout=2)
+        with lock:
+            inside -= 1
+        return _resp(text=kwargs["messages"][0]["content"])
+
+    client = ChatClient(
+        EndpointConfig("http://x/v1", "k", "m", http_limit=1),
+        "judge",
+        tmp_path,
+        no_cache=True,
+        create_fn=create,
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        fa = pool.submit(client.chat, [{"role": "user", "content": "a"}])
+        assert first_in.wait(timeout=2)
+        fb = pool.submit(client.chat, [{"role": "user", "content": "b"}])
+        assert not fb.done()
+        with lock:
+            assert max_inside == 1
+        release.set()
+        ra, rb = fa.result(timeout=5), fb.result(timeout=5)
+    assert {ra.text, rb.text} == {"a", "b"}
+    assert max_inside == 1
+
+
+def test_http_limit_omitted_allows_overlap(tmp_path: Path):
+    barrier = threading.Barrier(2)
+    inside = 0
+    max_inside = 0
+    lock = threading.Lock()
+
+    def create(**kwargs):
+        nonlocal inside, max_inside
+        with lock:
+            inside += 1
+            max_inside = max(max_inside, inside)
+        barrier.wait(timeout=2)
+        with lock:
+            inside -= 1
+        return _resp(text=kwargs["messages"][0]["content"])
+
+    client = ChatClient(
+        EndpointConfig("http://x/v1", "k", "m"),
+        "judge",
+        tmp_path,
+        no_cache=True,
+        create_fn=create,
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        fa = pool.submit(client.chat, [{"role": "user", "content": "a"}])
+        fb = pool.submit(client.chat, [{"role": "user", "content": "b"}])
+        ra, rb = fa.result(timeout=5), fb.result(timeout=5)
+    assert {ra.text, rb.text} == {"a", "b"}
+    assert max_inside == 2
+
+
+def test_http_limit_cache_hit_skips_gate(tmp_path: Path):
+    first_in = threading.Event()
+    release = threading.Event()
+    live_calls = {"n": 0}
+
+    def create(**kwargs):
+        live_calls["n"] += 1
+        text = kwargs["messages"][0]["content"]
+        if text == "live":
+            first_in.set()
+            assert release.wait(timeout=2)
+        return _resp(text=text)
+
+    client = ChatClient(
+        EndpointConfig("http://x/v1", "k", "m", http_limit=1),
+        "judge",
+        tmp_path,
+        no_cache=False,
+        create_fn=create,
+    )
+    primed = client.chat([{"role": "user", "content": "cached"}])
+    assert primed.cached is False
+    live_calls["n"] = 0
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        live = pool.submit(client.chat, [{"role": "user", "content": "live"}])
+        assert first_in.wait(timeout=2)
+        hit = pool.submit(client.chat, [{"role": "user", "content": "cached"}])
+        cached = hit.result(timeout=2)
+        assert cached.cached is True
+        assert cached.text == "cached"
+        assert live_calls["n"] == 1
+        assert not live.done()
+        release.set()
+        live.result(timeout=5)
+    assert live_calls["n"] == 1
+
+
+def test_http_limit_wait_is_not_a_timeout(tmp_path: Path):
+    first_in = threading.Event()
+    release = threading.Event()
+    second_create = threading.Event()
+
+    def create(**kwargs):
+        text = kwargs["messages"][0]["content"]
+        if text == "first":
+            first_in.set()
+            assert release.wait(timeout=2)
+        else:
+            second_create.set()
+        return _resp(text=text)
+
+    client = ChatClient(
+        EndpointConfig("http://x/v1", "k", "m", timeout_s=0.05, http_limit=1),
+        "judge",
+        tmp_path,
+        no_cache=True,
+        create_fn=create,
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        fa = pool.submit(client.chat, [{"role": "user", "content": "first"}])
+        assert first_in.wait(timeout=2)
+        fb = pool.submit(client.chat, [{"role": "user", "content": "second"}])
+        assert not second_create.wait(timeout=0.15)
+        assert not fb.done()
+        try:
+            assert fb.exception(timeout=0.01) is None
+        except TimeoutError:
+            pass  # still waiting on the semaphore — not a chat timeout
+        release.set()
+        ra, rb = fa.result(timeout=5), fb.result(timeout=5)
+    assert ra.text == "first"
+    assert rb.text == "second"
+    assert second_create.is_set()
+

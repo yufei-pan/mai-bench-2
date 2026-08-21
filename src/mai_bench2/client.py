@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import threading
@@ -42,6 +43,11 @@ class ChatClient:
         self._usage = TokenCounts()
         self._usage_lock = threading.Lock()
         self._cache_lock = threading.Lock()
+        raw_limit = endpoint.http_limit
+        if raw_limit is None:
+            self._http_sema = None
+        else:
+            self._http_sema = threading.BoundedSemaphore(max(1, int(raw_limit)))
         self._sample = 0
 
         if create_fn is None:
@@ -102,7 +108,8 @@ class ChatClient:
             temperature=effective_temperature,
             tools=tools,
         )
-        response = self._create_with_retries(kwargs)
+        with self._http_slot():
+            response = self._create_with_retries(kwargs)
         message = response.choices[0].message
         text = message.content or ""
         tool_calls = _parse_tool_calls(message)
@@ -142,7 +149,20 @@ class ChatClient:
             temperature=self._endpoint.temperature,
             tools=None,
         )
-        self._create_with_retries(kwargs)
+        with self._http_slot():
+            self._create_with_retries(kwargs)
+
+    @contextlib.contextmanager
+    def _http_slot(self):
+        sema = self._http_sema
+        if sema is None:
+            yield
+            return
+        sema.acquire()  # blocking, no timeout
+        try:
+            yield
+        finally:
+            sema.release()
 
     def set_sample(self, sample: int) -> None:
         """Repeat index. It joins the cache key so run k is not run 0 replayed."""
