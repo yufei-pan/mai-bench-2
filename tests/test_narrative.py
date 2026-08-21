@@ -57,7 +57,8 @@ def test_generate_narrative_prompt_is_gloss_not_contract_lecture():
     generate_narrative(client, _DIGEST)
     blob = "\n".join(message["content"] for message in client.calls[0]["messages"])
     assert "润色员" in blob
-    assert "15" in blob and "25" in blob
+    assert "给人类在命令行看" in blob
+    assert "尽量言简意赅" in blob
     assert "不要编造" in blob
     assert "含义" in blob
     assert "最差样本" in blob
@@ -74,7 +75,7 @@ def test_generate_narrative_retries_empty_then_succeeds():
     assert result.text == _GLOSS
     assert len(client.calls) == 2
     second = client.calls[1]["messages"][0]["content"]
-    assert second.startswith("上一份不是短中文终端报告")
+    assert second.startswith("上一份不是中文终端报告")
     assert "只输出一个 JSON 对象" not in second
 
 
