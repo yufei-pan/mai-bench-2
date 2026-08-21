@@ -18,6 +18,7 @@ _ENDPOINT_KEYS = (
     "extra_body",
     "max_tokens",
     "max_attempts",
+    "http_limit",
 )
 _RUN_KEYS = (
     "smoke",
@@ -48,6 +49,7 @@ class EndpointConfig:
     # Attempts per request, including the first. A router rotating exhausted
     # provider keys needs more patience than a plain HTTP blip.
     max_attempts: int = 5
+    http_limit: int | None = None
 
 
 @dataclass
@@ -156,6 +158,8 @@ def _endpoint(raw: object) -> EndpointConfig | None:
     kwargs = {key: raw[key] for key in _ENDPOINT_KEYS if key in raw}
     if "extra_body" in kwargs and isinstance(kwargs["extra_body"], dict):
         kwargs["extra_body"] = dict(kwargs["extra_body"])
+    if "http_limit" in kwargs and kwargs["http_limit"] is not None:
+        kwargs["http_limit"] = max(1, int(kwargs["http_limit"]))
     return EndpointConfig(**kwargs)
 
 
