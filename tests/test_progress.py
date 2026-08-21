@@ -173,6 +173,41 @@ def test_planner_ticks_every_item_when_all_calls_fail():
     assert all(item_id for _, item_id in progress.ticks)
 
 
+def test_planner_concurrency_two_ticks_all_failures():
+    progress = RecordingProgress()
+    cfg = _cfg(planner=_PLANNER)
+    cfg.run.concurrency = 2
+    run_planner_suite(
+        cfg,
+        BoomClient(),
+        load_persona("official", root=ROOT),
+        root=ROOT,
+        progress=progress,
+    )
+    assert len(progress.ticks) == 8
+    assert {suite for suite, _ in progress.ticks} == {"planner"}
+
+
+def test_planner_concurrency_two_matches_serial_subscore():
+    serial = run_planner_suite(
+        _cfg(planner=_PLANNER),
+        SilentClient(),
+        load_persona("official", root=ROOT),
+        root=ROOT,
+    )
+    cfg = _cfg(planner=_PLANNER)
+    cfg.run.concurrency = 2
+    parallel = run_planner_suite(
+        cfg,
+        SilentClient(),
+        load_persona("official", root=ROOT),
+        root=ROOT,
+    )
+    assert parallel.n_items == serial.n_items
+    assert parallel.subscore == serial.subscore
+    assert [pred.id for pred in parallel.predictions] == [pred.id for pred in serial.predictions]
+
+
 def test_replyer_ticks_every_item_when_all_calls_fail():
     progress = RecordingProgress()
     run_replyer_suite(
