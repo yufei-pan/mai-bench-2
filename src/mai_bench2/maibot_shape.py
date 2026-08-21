@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 _ORIGIN = datetime(2026, 1, 1, 12, 0, 0)
 
 
-
 def identity(nickname: str, personality: str) -> str:
     return f"你的名字是{nickname}。\n{personality}".strip()
 
