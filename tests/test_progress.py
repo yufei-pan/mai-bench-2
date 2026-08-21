@@ -253,6 +253,23 @@ def test_e2e_ticks_every_item_when_all_calls_fail():
     assert {suite for suite, _ in progress.ticks} == {"e2e"}
 
 
+def test_e2e_concurrency_two_ticks_all_failures():
+    progress = RecordingProgress()
+    cfg = _cfg(planner=_PLANNER, replyer=_REPLYER, judge=_JUDGE)
+    cfg.run.concurrency = 2
+    run_e2e_suite(
+        cfg,
+        BoomClient(),
+        BoomClient(),
+        BoomClient(),
+        load_persona("official", root=ROOT),
+        root=ROOT,
+        progress=progress,
+    )
+    assert len(progress.ticks) == 4
+    assert {suite for suite, _ in progress.ticks} == {"e2e"}
+
+
 def test_run_suites_ticks_each_planner_smoke_item():
     from mai_bench2.cli import run_suites
 
