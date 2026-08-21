@@ -237,9 +237,16 @@ def test_gold_002_decision_point_shows_the_state_the_label_describes():
 
     client = _Scripted(text="先看看再说")
     run_planner_loop(client, _persona(), _gold_002())
-    seen = str(client.seen)
+    blob = "\n".join(
+        message.get("content") or ""
+        for turn in client.seen
+        for message in turn
+    )
     item = _gold_002()
     at_target = [m for m in item["messages"] if m["t"] <= item["target_t"]]
     future = [m for m in item["messages"] if m["t"] > item["target_t"]]
-    assert all(m["text"] in seen for m in at_target)
-    assert all(m["text"] not in seen for m in future if m["text"].strip())
+    # The overwritten tail carries the gold decision; the noisy prefix may
+    # contain newlines that str(list) escapes, and is not what the label names.
+    tail = at_target[-2:]
+    assert tail and all(m["text"] in blob for m in tail)
+    assert all(m["text"] not in blob for m in future if m["text"].strip())

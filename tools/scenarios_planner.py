@@ -24,7 +24,9 @@ from goldkit import (
     VIDEO,
     Item,
     M,
+    contextualize,
     described_image,
+    load_tapes,
     me,
     memory,
     profile,
@@ -38,6 +40,7 @@ SCENARIOS: list[Item] = []
 
 
 def add(item: Item) -> Item:
+    item = contextualize(item, load_tapes())
     SCENARIOS.append(item)
     return item
 

@@ -58,6 +58,8 @@ def test_readme_covers_install_suites_gating_and_warnings():
     assert "concurrency" in (ROOT / "config.example.toml").read_text(encoding="utf-8")
     assert "http_limit" in text
     assert "http_limit" in (ROOT / "config.example.toml").read_text(encoding="utf-8")
+    assert "40-80" in text or "40–80" in text
+    assert "60-120" in text or "60–120" in text
 
 
 def test_example_config_seats_env_smoke_and_temps():
