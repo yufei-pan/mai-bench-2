@@ -124,3 +124,39 @@ def test_contextualize_cycled_quotes_stay_on_same_copy():
         assert message.text == "回那句"
         assert pad[i - 1].text == "先说"
         assert message.quote == pad[i - 1].msg_id
+
+
+def test_contextualize_skips_fact_aliases_in_pad_keeps_them_in_tail():
+    ident = "p-fact-pad-001"
+    want = window_size(ident, "group")
+    msgs = []
+    for i in range(200):
+        text = "看这个链接吧" if i % 3 == 0 else f"水{i}"
+        msgs.append(M(i * 10, f"t{i+1}", f"q_{i}", text, card=f"卡{i%3}"))
+    tape = Tape(id="fact-tape", channel="group", messages=msgs)
+    tail = [M(0, "m1", "q_x", "麦麦 那个链接给我一下", card="小徐")]
+    item = Item(ident, "group", tail, 0, "reply", reply_msg_id="m1", facts=(("链接",),))
+    out = contextualize(item, [tape])
+    visible = [m for m in out.messages if m.t <= out.target_t]
+    assert len(counted(visible)) == want
+    assert not any("链接" in (m.text or "") for m in visible[:-1])
+    assert "链接" in visible[-1].text
+
+
+def test_contextualize_drops_cut_pad_quotes():
+    ident = "p-addr-001"
+    need = window_size(ident, "group") - 1
+    msgs = [M(0, "outside", "q0", "窗外", card="卡0")]
+    msgs.append(M(10, "inside", "q1", "回窗外", card="卡1", quote="outside"))
+    for i in range(need - 1):
+        msgs.append(M(20 + i * 10, f"f{i}", f"q_{i}", f"水{i}", card="卡0"))
+    tape = Tape(id="q-cut", channel="group", messages=msgs)
+    item = Item(ident, "group", _tail(), 0, "reply", reply_msg_id="m1")
+    out = contextualize(item, [tape])
+    ids = {m.msg_id for m in out.messages}
+    quoted = next(m for m in out.messages if m.text == "回窗外")
+    assert quoted.quote is None
+    for message in out.messages:
+        if message.quote:
+            assert "#" not in message.quote
+            assert message.quote in ids

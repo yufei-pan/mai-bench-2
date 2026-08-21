@@ -224,22 +224,40 @@ def _uniquify_copy(messages: list[M], cycle: int) -> list[M]:
     return messages
 
 
-def _take_pad(item_id: str, channel: str, need: int, tapes: list[Tape]) -> list[M]:
+def _fact_aliases(facts) -> tuple[str, ...]:
+    aliases: list[str] = []
+    for fact in facts or ():
+        parts = fact if isinstance(fact, (list, tuple)) else (fact,)
+        aliases.extend(str(part) for part in parts if part)
+    return tuple(aliases)
+
+
+def _keep_pad_turn(message: M, aliases: tuple[str, ...]) -> bool:
+    if message.kind == "message" and is_bot_address(message):
+        return False
+    text = message.text or ""
+    return not any(alias in text for alias in aliases)
+
+
+def _take_pad(
+    item_id: str, channel: str, need: int, tapes: list[Tape], aliases: tuple[str, ...] = ()
+) -> list[M]:
     pool = [t for t in tapes if t.channel == channel]
     if not pool:
         raise ValueError(f"no tapes for channel {channel}")
     start = int.from_bytes(hashlib.sha256(f"{item_id}:tape".encode()).digest()[:2], "big") % len(pool)
+    raw: list[M] = []
     chain: list[M] = []
     guard = 0
-    while len(counted(chain)) < need + 8:
-        tape = pool[(start + guard) % len(pool)]
-        base = (chain[-1].t + 120) if chain else 0
-        first = tape.messages[0].t if tape.messages else 0
-        chain.extend(_uniquify_copy(_offset(tape.messages, base - first), guard))
-        guard += 1
-        if guard > 30:
+    while True:
+        chain = [m for m in raw if _keep_pad_turn(m, aliases)]
+        if len(counted(chain)) >= need + 8 or guard > 30:
             break
-    chain = [m for m in chain if m.kind != "message" or not is_bot_address(m)]
+        tape = pool[(start + guard) % len(pool)]
+        base = (raw[-1].t + 120) if raw else 0
+        first = tape.messages[0].t if tape.messages else 0
+        raw.extend(_uniquify_copy(_offset(tape.messages, base - first), guard))
+        guard += 1
     # last `need` counted messages, keeping interleaved non-counted that sit after the cut
     counted_idx = [i for i, m in enumerate(chain) if m.kind == "message"]
     if len(counted_idx) < need:
@@ -254,7 +272,7 @@ def contextualize(item: Item, tapes: list[Tape]) -> Item:
     need = window_size(item.id, item.channel) - len(counted(before))
     if need <= 0:
         return item
-    pad = _take_pad(item.id, item.channel, need, tapes)
+    pad = _take_pad(item.id, item.channel, need, tapes, _fact_aliases(item.facts))
     if pad:
         origin = pad[0].t
         for message in pad:
@@ -274,7 +292,7 @@ def contextualize(item: Item, tapes: list[Tape]) -> Item:
             message.msg_id = mapping[message.msg_id]
     for message in merged:
         if message.quote:
-            message.quote = mapping.get(message.quote, message.quote)
+            message.quote = mapping.get(message.quote)
     reply = mapping.get(item.reply_msg_id, item.reply_msg_id) if item.reply_msg_id else None
     new_target = shifted_before[-1].t if shifted_before else item.target_t
     handoff = dict(item.handoff) if item.handoff else None
