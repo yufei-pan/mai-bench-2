@@ -26,6 +26,7 @@ CAST = (
 SHORT_SELF = ("嗯", "行", "好", "我看看", "那行", "知道了", "哦", "确实")
 BOT = frozenset({"菜包", "麦麦"})
 DENY = ("菜包", "demonte", "地上补课", "技校配不上", "群臭狗", "HydroBlue", "http://", "https://")
+ALLOWED_FORWARD_SPEAKERS = frozenset({"麦麦", "QQ用户", *CAST})
 
 ATTR_RE = re.compile(r'(\w+)=(?:"([^"]*)"|\'([^\']*)\')')
 MSG_RE = re.compile(
@@ -203,6 +204,31 @@ def assign_times(rows: list[dict]) -> None:
         last_sec = sec
 
 
+def rewrite_forward_preview_speakers(text: str) -> str:
+    if "转发消息" not in text:
+        return text
+    lines = text.split("\n")
+    out: list[str] = []
+    in_forward = False
+    for line in lines:
+        if "转发消息" in line:
+            in_forward = True
+            out.append(line)
+            continue
+        if in_forward:
+            stripped = line.strip()
+            if stripped.startswith("预览") or stripped.startswith("[消息类型]"):
+                out.append(line)
+                continue
+            idx = line.find("：")
+            if idx > 0:
+                name = line[:idx]
+                if name not in ALLOWED_FORWARD_SPEAKERS and not name.startswith("["):
+                    line = fake_card(name, None) + line[idx:]
+        out.append(line)
+    return "\n".join(out)
+
+
 def masquerade(rows: list[dict]) -> None:
     group = any(row["card"] for row in rows)
     nick_map: dict[str, str] = {}
@@ -226,6 +252,7 @@ def masquerade(rows: list[dict]) -> None:
             else:
                 out = out.replace(f"@{old}", f"@{fake}")
                 out = out.replace(old, fake)
+        out = rewrite_forward_preview_speakers(out)
         out = URL_RE.sub("[链接]", out)
         out = ID_RE.sub("[id]", out)
         for needle in DENY:
