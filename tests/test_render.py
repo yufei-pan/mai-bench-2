@@ -3,7 +3,7 @@ from mai_bench2.render import clock_time, render_entry, render_log
 
 def test_message_envelope_matches_maibot_shape():
     out = render_entry({"t": 0, "msg_id": "m1", "user": "q_1", "text": "在吗"})
-    assert out == '<message msg_id="m1" time="14:00:00" user="q_1">\n在吗'
+    assert out == '<message msg_id="m1" time="12:00:00" user="q_1">\n在吗'
 
 
 def test_optional_attributes_appear_only_when_set():
@@ -12,7 +12,7 @@ def test_optional_attributes_appear_only_when_set():
         "quote": "m1", "is_self_message": True, "text": "嗯",
     }
     out = render_entry(entry)
-    assert out.startswith('<message msg_id="m2" quote="m1" time="14:01:05" user="q_2" ')
+    assert out.startswith('<message msg_id="m2" quote="m1" time="12:01:05" user="q_2" ')
     assert 'group_card="小徐"' in out
     assert 'is_self_message="true"' in out
     assert render_entry({"t": 0, "msg_id": "m", "user": "u", "text": ""}).count("=") == 3
@@ -34,8 +34,8 @@ def test_attribute_values_are_escaped():
 
 
 def test_clock_wraps_and_log_joins_in_order():
-    assert clock_time(0) == "14:00:00"
-    assert clock_time(36000) == "00:00:00"
+    assert clock_time(0) == "12:00:00"
+    assert clock_time(36000) == "22:00:00"
     log = render_log([
         {"t": 0, "msg_id": "m1", "user": "a", "text": "一"},
         {"t": 5, "msg_id": "m2", "user": "b", "text": "二"},

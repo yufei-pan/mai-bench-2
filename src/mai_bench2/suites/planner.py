@@ -67,7 +67,13 @@ def run_planner_suite(
     )
 
     def _one(item: dict) -> PlannerTrace:
-        return run_planner_loop(client, persona, item, prompts=prompts)
+        return run_planner_loop(
+            client,
+            persona,
+            item,
+            prompts=prompts,
+            assistant_prefill=cfg.planner.assistant_prefill,
+        )
 
     mapped = map_items(
         _one,

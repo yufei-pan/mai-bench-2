@@ -60,6 +60,7 @@ def test_readme_covers_install_suites_gating_and_warnings():
     assert "http_limit" in (ROOT / "config.example.toml").read_text(encoding="utf-8")
     assert "40-80" in text or "40–80" in text
     assert "60-120" in text or "60–120" in text
+    assert "assistant_prefill" in text
 
 
 def test_example_config_seats_env_smoke_and_temps():
@@ -75,6 +76,7 @@ def test_example_config_seats_env_smoke_and_temps():
     assert "temperature = 0.0" in text
     assert "concurrency = 1" in text
     assert "# http_limit = 2" in text
+    assert "assistant_prefill = false" in text
     lower = text.lower()
     assert "sotopia" not in lower
     assert "ambient" not in lower
@@ -102,6 +104,7 @@ def test_example_config_loads_with_env():
     assert cfg.replyer.temperature == 0.0
     assert cfg.judge.temperature == 0.0
     assert cfg.planner.http_limit is None
+    assert cfg.planner.assistant_prefill is False
     assert cfg.replyer.http_limit is None
     assert cfg.judge.http_limit is None
     assert cfg.run.smoke is True

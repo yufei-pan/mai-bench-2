@@ -117,7 +117,13 @@ def run_e2e_suite(
     )
 
     def _one(item: dict) -> _E2eOne:
-        trace = run_planner_loop(planner_client, persona, item, prompts=prompts)
+        trace = run_planner_loop(
+            planner_client,
+            persona,
+            item,
+            prompts=prompts,
+            assistant_prefill=bool(cfg.planner and cfg.planner.assistant_prefill),
+        )
         visible = ""
         produced = False
         row: dict | None = None

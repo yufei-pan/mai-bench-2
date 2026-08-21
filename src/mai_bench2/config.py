@@ -19,6 +19,7 @@ _ENDPOINT_KEYS = (
     "max_tokens",
     "max_attempts",
     "http_limit",
+    "assistant_prefill",
 )
 _RUN_KEYS = (
     "smoke",
@@ -50,6 +51,7 @@ class EndpointConfig:
     # provider keys needs more patience than a plain HTTP blip.
     max_attempts: int = 5
     http_limit: int | None = None
+    assistant_prefill: bool = False
 
 
 @dataclass
@@ -163,6 +165,8 @@ def _endpoint(raw: object) -> EndpointConfig | None:
         kwargs["extra_body"] = dict(kwargs["extra_body"])
     if "http_limit" in kwargs and kwargs["http_limit"] is not None:
         kwargs["http_limit"] = max(1, int(kwargs["http_limit"]))
+    if "assistant_prefill" in kwargs:
+        kwargs["assistant_prefill"] = bool(kwargs["assistant_prefill"])
     return EndpointConfig(**kwargs)
 
 

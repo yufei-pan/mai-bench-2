@@ -190,6 +190,11 @@ Optional `http_limit` on `[planner]` / `[replyer]` / `[judge]` caps in-flight HT
 on that seat (omitted means unlimited). Waiting for a slot is not a client timeout.
 Example: `[judge] http_limit = 2` with `--concurrency 7`.
 
+On `[planner]`, `assistant_prefill = true` sends the last reminder as an assistant
+prefill (`我需要输出对麦麦发言的分析…`). The default `false` sends it as a user
+turn with `你需要…`. Chat history is one user `<message>` envelope per gold turn,
+matching MaiBot's router dumps, plus a `时间：` clock line.
+
 Results carry `rubric_hash` next to `persona_hex` and `prompts_hex`. Only runs
 sharing all three are comparable.
 

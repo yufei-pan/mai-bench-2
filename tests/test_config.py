@@ -54,6 +54,21 @@ def _planner_toml(**extra: str) -> str:
     return body
 
 
+def test_load_assistant_prefill_omitted_is_false(tmp_path: Path):
+    path = tmp_path / "c.toml"
+    path.write_text(_planner_toml(), encoding="utf-8")
+    cfg = load_config(path)
+    assert cfg.planner is not None
+    assert cfg.planner.assistant_prefill is False
+
+
+def test_load_assistant_prefill_true(tmp_path: Path):
+    path = tmp_path / "c.toml"
+    path.write_text(_planner_toml(prefill="assistant_prefill = true\n"), encoding="utf-8")
+    cfg = load_config(path)
+    assert cfg.planner.assistant_prefill is True
+
+
 def test_load_http_limit_omitted_is_none(tmp_path: Path):
     path = tmp_path / "c.toml"
     path.write_text(_planner_toml(), encoding="utf-8")

@@ -5,6 +5,7 @@ id = "minimal"
 [planner]
 system = """规划席。{bot_name} {behavior_style} {group_chat_attention_block} {query_memory_rule}"""
 final_assistant_reminder = "提醒 {bot_name}"
+final_user_reminder = "请 {bot_name} 分析"
 
 [planner.query_memory_rule]
 group = "- query_memory() 群聊记忆"

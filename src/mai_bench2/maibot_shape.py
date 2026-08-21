@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 _ORIGIN = datetime(2026, 1, 1, 12, 0, 0)
 
 
+
 def identity(nickname: str, personality: str) -> str:
     return f"你的名字是{nickname}。\n{personality}".strip()
 
@@ -18,6 +19,10 @@ def attention_block(chat_prompt: str) -> str:
 
 def stamp(t: int) -> str:
     return (_ORIGIN + timedelta(seconds=int(t))).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def clock_time(t: int) -> str:
+    return (_ORIGIN + timedelta(seconds=int(t))).strftime("%H:%M:%S")
 
 
 def deferred_reminder(locked: list[tuple[str, str]]) -> str:

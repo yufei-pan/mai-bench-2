@@ -7,6 +7,8 @@ temperature = 0.0
 reasoning_effort = "max"
 max_tokens = 256000
 max_attempts = 5
+# Last reminder: false = user「你需要…」, true = assistant prefill「我需要…」
+assistant_prefill = false
 # http_limit = 2
 
 [replyer]

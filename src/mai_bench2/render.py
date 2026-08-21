@@ -12,17 +12,12 @@ non-chat blocks (<plugin_proactive_task>, <system-reminder>) are interleaved.
 
 from __future__ import annotations
 
-BASE_SECONDS = 14 * 3600  # t=0 renders as 14:00:00
+from mai_bench2.maibot_shape import clock_time
 
 MESSAGE = "message"
 PROACTIVE_TASK = "proactive_task"
 SYSTEM_REMINDER = "system_reminder"
 KINDS = frozenset({MESSAGE, PROACTIVE_TASK, SYSTEM_REMINDER})
-
-
-def clock_time(t: int) -> str:
-    total = (BASE_SECONDS + int(t)) % 86400
-    return f"{total // 3600:02d}:{total % 3600 // 60:02d}:{total % 60:02d}"
 
 
 def render_entry(entry: dict) -> str:

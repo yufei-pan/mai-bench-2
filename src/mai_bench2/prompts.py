@@ -16,6 +16,7 @@ from pathlib import Path
 _HEX_KEYS = (
     "planner_system",
     "planner_final_assistant_reminder",
+    "planner_final_user_reminder",
     "query_memory_rule_group",
     "query_memory_rule_private",
     "replyer_system",
@@ -32,6 +33,7 @@ class Prompts:
     path: str
     planner_system: str
     planner_final_assistant_reminder: str
+    planner_final_user_reminder: str
     query_memory_rule_group: str
     query_memory_rule_private: str
     replyer_system: str
@@ -78,6 +80,7 @@ def load_prompts(spec: str, *, root: Path) -> Prompts:
     required = {
         "planner.system": planner.get("system"),
         "planner.final_assistant_reminder": planner.get("final_assistant_reminder"),
+        "planner.final_user_reminder": planner.get("final_user_reminder"),
         "planner.query_memory_rule.group": query_memory.get("group"),
         "planner.query_memory_rule.private": query_memory.get("private"),
         "replyer.system": replyer.get("system"),
@@ -94,6 +97,7 @@ def load_prompts(spec: str, *, root: Path) -> Prompts:
         path=str(path),
         planner_system=required["planner.system"],
         planner_final_assistant_reminder=required["planner.final_assistant_reminder"],
+        planner_final_user_reminder=required["planner.final_user_reminder"],
         query_memory_rule_group=required["planner.query_memory_rule.group"],
         query_memory_rule_private=required["planner.query_memory_rule.private"],
         replyer_system=required["replyer.system"],

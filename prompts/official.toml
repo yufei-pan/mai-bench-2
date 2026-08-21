@@ -11,7 +11,8 @@
 #   planner.system                   : {bot_name} {behavior_style}
 #                                      {group_chat_attention_block}
 #                                      {query_memory_rule}
-#   planner.final_assistant_reminder : {bot_name}
+#   planner.final_assistant_reminder : {bot_name}  (assistant_prefill = true)
+#   planner.final_user_reminder      : {bot_name}  (assistant_prefill = false)
 #   replyer.system                   : {identity} {reply_style}
 #                                      {group_chat_attention_block}
 #                                      {replyer_output_instruction}
@@ -53,6 +54,7 @@ system = """
 现在，请你输出你对{bot_name}发言的分析，视情况输出文本内容的分析、进行工具调用：
 """
 final_assistant_reminder = "我需要输出对{bot_name}发言的分析，视情况输出文本内容的分析，思考是否进行工具调用"
+final_user_reminder = "你需要输出对{bot_name}发言的分析，视情况输出文本内容的分析，思考是否进行工具调用"
 
 [planner.query_memory_rule]
 group = "- query_memory()：只有回复明显依赖群内过去对话、共同经历、公开约定、任务进展或近期线索时使用；不要为了寒暄、即时情绪回应、轻松接话、只看最近消息就能回答的内容而检索。不要把私聊或个人隐私记忆带到群聊里。"

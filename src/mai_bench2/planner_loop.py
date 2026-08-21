@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 
 from mai_bench2.maibot_shape import attention_block, deferred_reminder, stamp
 from mai_bench2.prompts import Prompts, default_prompts, fill
-from mai_bench2.render import render_log
+from mai_bench2.render import render_entry
 from mai_bench2.tools import (
     ALWAYS_VISIBLE,
     DEFERRED,
@@ -46,7 +46,13 @@ class PlannerTrace:
 
 
 def run_planner_loop(
-    client, persona, item: dict, *, prompts: Prompts | None = None, max_steps: int = 8
+    client,
+    persona,
+    item: dict,
+    *,
+    prompts: Prompts | None = None,
+    max_steps: int = 8,
+    assistant_prefill: bool = False,
 ) -> PlannerTrace:
     """Run the planner against fake tools on a logical clock.
 
@@ -91,6 +97,7 @@ def run_planner_loop(
         _visible(log, clock),
         tool_specs_for_item(item, unlocked=unlocked),
         unlocked,
+        assistant_prefill=assistant_prefill,
     )
 
     while step_count < max_steps and not stop:
@@ -165,9 +172,13 @@ def run_planner_loop(
             break
         if waited:
             if arrivals:
-                conversation.append({"role": "user", "content": "新消息：\n" + _format_log(arrivals)})
+                conversation.extend(
+                    {"role": "user", "content": render_entry(message)} for message in arrivals
+                )
             elif clock >= max_t:
                 conversation.append({"role": "user", "content": "没有新消息，聊天记录已到末尾。"})
+            conversation.append({"role": "user", "content": f"时间：{stamp(clock)}"})
+            conversation.append(_final_reminder(applied, persona, assistant_prefill))
 
     action = first_action or CONTRACT_FAIL
     final_action = last_commit or CONTRACT_FAIL
@@ -195,11 +206,17 @@ def _visible(log: list[dict], clock: int) -> list[dict]:
     return [message for message in log if message["t"] <= clock]
 
 
-def _format_log(messages: list[dict]) -> str:
-    return render_log(messages)
+def _final_reminder(prompts, persona, assistant_prefill: bool) -> dict:
+    if assistant_prefill:
+        template = prompts.planner_final_assistant_reminder
+        role = "assistant"
+    else:
+        template = prompts.planner_final_user_reminder
+        role = "user"
+    return {"role": role, "content": fill(template, {"bot_name": persona.nickname})}
 
 
-def _planner_messages(persona, prompts, item, visible, specs, unlocked):
+def _planner_messages(persona, prompts, item, visible, specs, unlocked, *, assistant_prefill: bool = False):
     del specs
     channel = item.get("channel")
     chat_prompt = persona.private_chat_prompt if channel == "private" else persona.group_chat_prompt
@@ -214,20 +231,14 @@ def _planner_messages(persona, prompts, item, visible, specs, unlocked):
         },
     )
     messages = [{"role": "system", "content": system}]
-    log_text = render_log(list(visible or []))
-    if log_text:
-        messages.append({"role": "user", "content": log_text})
-    clock = int(item.get("target_t") or 0)
-    messages.append({"role": "user", "content": f"时间：{stamp(clock)}"})
+    for entry in visible or []:
+        messages.append({"role": "user", "content": render_entry(entry)})
     reminder = deferred_reminder(_locked_deferred(unlocked))
     if reminder:
         messages.append({"role": "user", "content": reminder})
-    messages.append(
-        {
-            "role": "assistant",
-            "content": fill(prompts.planner_final_assistant_reminder, {"bot_name": persona.nickname}),
-        }
-    )
+    clock = int(item.get("target_t") or 0)
+    messages.append({"role": "user", "content": f"时间：{stamp(clock)}"})
+    messages.append(_final_reminder(prompts, persona, assistant_prefill))
     return messages
 
 
