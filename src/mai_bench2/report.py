@@ -23,6 +23,7 @@ def render_table(
     persona,
     smoke: bool,
     prompts=None,
+    cfg=None,
 ) -> str:
     headers = ("suite", "status", "native", "sub", "time", "tokens", "n")
     rows = [headers]
@@ -57,6 +58,7 @@ def render_table(
     if prompts is not None:
         identity += f" prompts_id={prompts.id} prompts_hex={prompts.hex}"
     lines.append(f"{identity} rubric_hash={rubric_hash(prompts)}")
+    lines.extend(_seat_lines(cfg))
     if headlines.scores:
         parts = [f"{name}={_fmt_num(value)}" for name, value in headlines.scores.items()]
         lines.append("headlines: " + " ".join(parts))
@@ -137,6 +139,19 @@ def write_artifacts(
             json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
+
+
+def _seat_lines(cfg) -> list[str]:
+    if cfg is None:
+        return []
+    lines = []
+    for role in ("planner", "replyer", "judge"):
+        endpoint = getattr(cfg, role, None)
+        if endpoint is None:
+            continue
+        thinking = endpoint.reasoning_effort or "-"
+        lines.append(f"{role}  model={endpoint.model}  thinking={thinking}")
+    return lines
 
 
 def _native_summary(native: dict[str, float]) -> str:

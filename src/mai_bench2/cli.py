@@ -344,7 +344,7 @@ def console(argv: list[str] | None = None) -> None:
             gold_counts=gold_counts,
         )
         table = render_table(
-            results, headlines, persona=persona, smoke=cfg.run.smoke, prompts=prompts
+            results, headlines, persona=persona, smoke=cfg.run.smoke, prompts=prompts, cfg=cfg
         )
         digest = build_digest(results, headlines, smoke=cfg.run.smoke)
         body = format_digest(digest)
