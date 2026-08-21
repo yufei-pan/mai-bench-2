@@ -7,6 +7,7 @@ temperature = 0.0
 reasoning_effort = "max"
 max_tokens = 256000
 max_attempts = 5
+# http_limit = 2
 
 [replyer]
 base_url = "http://127.0.0.1:8888/v1"
@@ -17,6 +18,7 @@ temperature = 0.0
 reasoning_effort = "max"
 max_tokens = 256000
 max_attempts = 5
+# http_limit = 2
 
 [judge]
 base_url = "${JUDGE_BASE_URL}"
@@ -26,6 +28,7 @@ timeout_s = 300
 temperature = 0.0
 reasoning_effort = "max"
 max_attempts = 5
+# http_limit = 2
 
 [run]
 smoke = true

@@ -55,6 +55,8 @@ def test_readme_covers_install_suites_gating_and_warnings():
     assert "polishes the digest" in text
     assert "--concurrency" in text
     assert "concurrency" in (ROOT / "config.example.toml").read_text(encoding="utf-8")
+    assert "http_limit" in text
+    assert "http_limit" in (ROOT / "config.example.toml").read_text(encoding="utf-8")
 
 
 def test_example_config_seats_env_smoke_and_temps():
@@ -69,6 +71,7 @@ def test_example_config_seats_env_smoke_and_temps():
     assert "smoke_n = 4" in text
     assert "temperature = 0.0" in text
     assert "concurrency = 1" in text
+    assert "# http_limit = 2" in text
     lower = text.lower()
     assert "sotopia" not in lower
     assert "ambient" not in lower
@@ -95,6 +98,9 @@ def test_example_config_loads_with_env():
     assert cfg.planner.temperature == 0.0
     assert cfg.replyer.temperature == 0.0
     assert cfg.judge.temperature == 0.0
+    assert cfg.planner.http_limit is None
+    assert cfg.replyer.http_limit is None
+    assert cfg.judge.http_limit is None
     assert cfg.run.smoke is True
     assert cfg.run.persona == "official"
     assert cfg.planner_suite.smoke_n == 8
