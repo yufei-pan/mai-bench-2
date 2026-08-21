@@ -53,6 +53,8 @@ def test_readme_covers_install_suites_gating_and_warnings():
     assert "digest.json" in lower
     assert "15-25" in text
     assert "polishes the digest" in text
+    assert "--concurrency" in text
+    assert "concurrency" in (ROOT / "config.example.toml").read_text(encoding="utf-8")
 
 
 def test_example_config_seats_env_smoke_and_temps():
@@ -66,6 +68,7 @@ def test_example_config_seats_env_smoke_and_temps():
     assert "smoke_n = 8" in text
     assert "smoke_n = 4" in text
     assert "temperature = 0.0" in text
+    assert "concurrency = 1" in text
     lower = text.lower()
     assert "sotopia" not in lower
     assert "ambient" not in lower
