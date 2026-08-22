@@ -53,6 +53,11 @@ def render_table(
             lines.append(f"{result.name}: error_message={result.error_message}")
         if result.error_detail:
             lines.append(f"{result.name}: error_detail={result.error_detail}")
+    for result in results:
+        coverage = _term_coverage(result)
+        if coverage:
+            lines.append("")
+            lines.extend(coverage)
     lines.append("")
     identity = f"persona_id={persona.id} persona_hex={persona.hex}"
     if prompts is not None:
@@ -155,9 +160,46 @@ def _seat_lines(cfg) -> list[str]:
 
 
 def _native_summary(native: dict[str, float]) -> str:
-    if not native:
+    """Scores only. `n_` / `share_` bookkeeping goes to the term coverage block."""
+    scored = {
+        key: value
+        for key, value in (native or {}).items()
+        if not key.startswith(("n_", "share_"))
+    }
+    if not scored:
         return "-"
-    return " ".join(f"{key}={_fmt_num(value)}" for key, value in native.items())
+    return " ".join(f"{key}={_fmt_num(value)}" for key, value in scored.items())
+
+
+def _term_coverage(result: SuiteResult) -> list[str]:
+    """How many items each term rested on, and what share of the headline it carried.
+
+    A term averaged over 8 of 124 items reads like a suite-wide number without its
+    denominator, and `_WEIGHTS` is renormalized per item, so the nominal weight is
+    not what the gold set actually charged.
+    """
+    native = result.native or {}
+    terms = [key for key in native if f"n_{key}" in native]
+    if not terms:
+        return []
+    terms.sort(key=lambda key: native.get(f"share_{key}", 0.0), reverse=True)
+    rows = [("term", "score", "items", "share")]
+    for key in terms:
+        n = int(native[f"n_{key}"])
+        rows.append(
+            (
+                key,
+                _fmt_num(native[key]),
+                f"{n}/{result.n_items}",
+                f"{100 * native.get(f'share_{key}', 0.0):.1f}%",
+            )
+        )
+    widths = [max(len(row[i]) for row in rows) for i in range(4)]
+    lines = [f"{result.name} terms:"]
+    lines.extend(
+        "  " + "  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row)) for row in rows
+    )
+    return lines
 
 
 def _fmt_sub(result: SuiteResult) -> str:

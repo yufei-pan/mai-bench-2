@@ -263,3 +263,46 @@ def test_table_without_cfg_has_no_seat_lines():
     table = _table()
     assert "thinking=" not in table
     assert "  model=" not in table
+
+
+# --- term coverage ---------------------------------------------------------
+
+
+COVERED = {
+    "action": 0.9,
+    "n_action": 124.0,
+    "share_action": 0.849,
+    "tool_f1": 0.5,
+    "n_tool_f1": 8.0,
+    "share_tool_f1": 0.011,
+    "contract_fail": 0.0,
+}
+
+
+def test_native_cell_stays_readable_and_hides_the_bookkeeping_keys():
+    table = _table(
+        results=[SuiteResult("planner", "ok", COVERED, 50.0, UsageSplit(), 1.0, 124)]
+    )
+    native_row = [line for line in table.splitlines() if line.startswith("planner ")][0]
+    assert "action=0.9" in native_row
+    assert "n_action" not in native_row
+    assert "share_action" not in native_row
+
+
+def test_table_prints_a_term_coverage_block_with_n_and_realized_share():
+    """A term averaged over 8 of 124 items reads like a suite-wide number. Publish
+    the denominator and the share of the headline it really carried."""
+    table = _table(
+        results=[SuiteResult("planner", "ok", COVERED, 50.0, UsageSplit(), 1.0, 124)]
+    )
+    assert "planner terms" in table
+    line = [line for line in table.splitlines() if line.strip().startswith("tool_f1")][0]
+    assert "8/124" in line
+    assert "1.1%" in line
+
+
+def test_term_coverage_block_is_omitted_when_no_term_has_coverage():
+    table = _table(
+        results=[SuiteResult("planner", "ok", {"action": 1.0}, 50.0, UsageSplit(), 1.0, 3)]
+    )
+    assert "planner terms" not in table
