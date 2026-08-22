@@ -160,3 +160,24 @@ def test_contextualize_drops_cut_pad_quotes():
         if message.quote:
             assert "#" not in message.quote
             assert message.quote in ids
+
+
+def test_contextualize_remaps_forward_fixture_msg_ids():
+    """A view_forward_message fixture is keyed on the msg_id of the forward itself,
+    and contextualize renumbers every msg_id when it pads the window. Without the
+    remap the fixture keys a message that no longer exists, so the tool can never
+    hit and the item is unwinnable."""
+    from goldkit import forward
+
+    item = Item(
+        "p-fwd-x", "group",
+        [M(0, "m1", "q_1", "[转发消息]", card="甲"),
+         M(6, "m2", "q_1", "@麦麦 看看里面", card="甲")],
+        6, "reply", tools=("view_forward_message",), reply_msg_id="m2",
+        fixtures={"view_forward_message": [forward("m1", "转发内容：周六北门集合")]},
+    )
+    out = contextualize(item, [_tape(80)])
+    forwarded = [m for m in out.messages if m.text == "[转发消息]"][0]
+    key = out.fixtures["view_forward_message"][0]["query_contains"]
+    assert key != "m1"
+    assert key == forwarded.msg_id
