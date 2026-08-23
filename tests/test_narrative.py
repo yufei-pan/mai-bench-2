@@ -104,3 +104,42 @@ def test_generate_narrative_chat_error_does_not_raise():
     result = generate_narrative(BoomClient(), _DIGEST)
     assert result.text is None
     assert "network down" in result.error_message
+
+
+# --- the constraints have to be in the prompt that is actually sent first ----
+
+
+def test_first_attempt_states_the_line_budget_and_bans_markdown_headers():
+    """15-25 lines and 'no ##' only existed in the retry prefix, and _valid_gloss
+    never rejected a '##' report — so the retry never fired and the run shipped a
+    markdown document instead of a terminal report."""
+    client = ScriptClient([_GLOSS])
+    generate_narrative(client, _DIGEST)
+    first = client.calls[0]["messages"][0]["content"]
+    assert "15" in first and "25" in first
+    assert "##" in first
+
+
+def test_markdown_header_output_is_rejected_and_retried():
+    marked = "## 含义\n\n- **首次动作**：8 条里约 6 条正确。\n\n## 最差样本\n\n- gold-001\n"
+    client = ScriptClient([marked, _GLOSS])
+    result = generate_narrative(client, _DIGEST)
+    assert result.text == _GLOSS
+    assert len(client.calls) == 2
+
+
+def test_a_plain_terminal_report_is_still_accepted():
+    client = ScriptClient([_GLOSS])
+    assert generate_narrative(client, _DIGEST).text == _GLOSS
+
+
+def test_narrative_prompt_carries_the_new_failure_evidence():
+    digest = dict(_DIGEST)
+    digest["worst"] = [
+        dict(_DIGEST["worst"][0], comment="判词：与依据相悖", analysis="分析：团团说等我五分钟")
+    ]
+    client = ScriptClient([_GLOSS])
+    generate_narrative(client, digest)
+    blob = client.calls[0]["messages"][0]["content"]
+    assert "判词：与依据相悖" in blob
+    assert "分析：团团说等我五分钟" in blob

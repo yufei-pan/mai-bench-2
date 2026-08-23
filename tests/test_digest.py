@@ -405,3 +405,99 @@ def test_tool_restraint_flags_querying_items_that_needed_nothing():
         "tool_restraint=0.5（124 条里 40 条）：在不需要检索的样本上调用了信息工具。"
         in digest["meanings"]
     )
+
+
+# --- the summarizer can only be as good as the evidence it is handed ---------
+
+
+def test_worst_entry_carries_the_judge_comment():
+    """The judge writes one sentence per item saying why it scored what it did.
+    Dropping it left the narrative restating a canned tag string."""
+    digest = build_digest(
+        [
+            SuiteResult(
+                "replyer", "ok",
+                {"in_character": 8.0, "style": 9.0, "grounding": 3.0,
+                 "group_chat": 9.0, "no_planner_voice": 10.0},
+                60.0, UsageSplit(), 1.0, 1,
+                predictions=[
+                    _pred("r-ground-009", "reply", "哪家店啊，你不说我哪知道", {
+                        "in_character": 8, "style": 9, "grounding": 3,
+                        "group_chat": 9, "no_planner_voice": 10,
+                        "comment": "检索已给出上月停业，应按分析转述，却反问哪家店，与依据相悖。",
+                    }),
+                ],
+            )
+        ],
+        HeadlineOutcome({}, []), smoke=False,
+    )
+    assert digest["worst"][0]["comment"] == "检索已给出上月停业，应按分析转述，却反问哪家店，与依据相悖。"
+
+
+def test_worst_entry_carries_the_planner_analysis():
+    """Two items can share a tag and fail for opposite reasons — one saw the wait
+    signal and overrode it, one never registered it. Only the analysis says which."""
+    digest = build_digest(
+        [
+            SuiteResult(
+                "planner", "ok", {"action": 0.0}, 0.0, UsageSplit(), 1.0, 1,
+                predictions=[
+                    _pred("p-contract-004", "wait", "reply", {
+                        "accepted": ["wait"], "tools_called": ["reply"],
+                        "assistant_text": "团团直接@麦麦说等我五分钟，自然的反应是答应并顺口问一句要干嘛。",
+                    }),
+                ],
+            )
+        ],
+        HeadlineOutcome({}, []), smoke=False,
+    )
+    assert "等我五分钟" in digest["worst"][0]["analysis"]
+
+
+def test_worst_list_does_not_spend_two_slots_on_one_item():
+    """planner and e2e both surface the same id with the same tag. Keep the entry
+    that carries the most context rather than printing the failure twice."""
+    pred = _pred("p-contract-004", "wait", "reply", {
+        "accepted": ["wait"], "tools_called": ["reply"], "assistant_text": "分析",
+    })
+    e2e_pred = _pred("p-contract-004", "wait", "好，等你", {
+        "accepted": ["wait"], "planner_action": "reply", "tools_called": ["query_memory", "reply"],
+        "assistant_text": "分析", "comment": "判词",
+    })
+    digest = build_digest(
+        [
+            SuiteResult("planner", "ok", {"action": 0.0}, 0.0, UsageSplit(), 1.0, 1, predictions=[pred]),
+            SuiteResult("e2e", "ok", {"action": 0.0}, 0.0, UsageSplit(), 1.0, 1, predictions=[e2e_pred]),
+        ],
+        HeadlineOutcome({}, []), smoke=False,
+    )
+    ids = [row["id"] for row in digest["worst"]]
+    assert ids == ["p-contract-004"]
+    assert digest["worst"][0]["suite"] == "e2e"
+
+
+def test_digest_drops_the_coverage_bookkeeping_from_native():
+    """n_/share_ exist for the table. Handing them to a model told not to repeat
+    table numbers is half the payload and an invitation to copy."""
+    digest = build_digest(
+        [_suite("planner", native={"action": 0.75, "n_action": 8.0, "share_action": 0.78}, n=8)],
+        HeadlineOutcome({}, []), smoke=False,
+    )
+    native = digest["suites"][0]["native"]
+    assert native == {"action": 0.75}
+
+
+def test_replyer_dimensions_collapse_into_one_meaning_line():
+    """Four near-identical boilerplate lines crowded out real findings and got cut
+    mid-family by the cap, leaving a lone dangling bullet."""
+    digest = build_digest(
+        [_suite("replyer", native={"in_character": 8.25, "style": 8.875,
+                                   "grounding": 8.875, "group_chat": 8.75,
+                                   "no_planner_voice": 10.0}, n=8)],
+        HeadlineOutcome({}, []), smoke=False,
+    )
+    dim_lines = [m for m in digest["meanings"] if "已决定回复之后的文案分项" in m]
+    assert len(dim_lines) == 1
+    assert "in_character=8.25" in dim_lines[0]
+    assert "group_chat=8.75" in dim_lines[0]
+    assert "no_planner_voice" not in dim_lines[0]

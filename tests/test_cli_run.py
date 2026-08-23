@@ -375,7 +375,8 @@ def test_console_prints_narrative_when_judge_configured(tmp_path: Path, monkeypa
             "planner", "ok", {"action": 1.0}, 50.0, UsageSplit(), 1.0, 3
         ),
     )
-    _FakeClient.narrative_text = "## 发现\n规划器没有原生 tool_calls。"
+    # a terminal report, not a markdown document — `##` is rejected and retried
+    _FakeClient.narrative_text = "含义\n- 规划器没有原生 tool_calls。\n\n最差样本：无。"
     monkeypatch.setattr(
         sys,
         "argv",

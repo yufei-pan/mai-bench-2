@@ -7,6 +7,10 @@ from mai_bench2.types import SuiteResult
 _MAX_MEANINGS = 8
 _MAX_WORST = 5
 _QUOTE = 80
+_ANALYSIS = 240
+# A worst entry is the summarizer's only evidence about a specific failure. The
+# suite that carries the most of it wins when the same id surfaces twice.
+_SUITE_CONTEXT = {"e2e": 0, "planner": 1, "replyer": 2}
 _WRAP = 88
 _SUITE_ORDER = ("planner", "replyer", "e2e")
 _REPLYER_DIMS = ("in_character", "style", "grounding", "group_chat", "no_planner_voice")
@@ -83,12 +87,18 @@ def _worst_line(row: dict) -> str:
 
 
 def _suite_entry(result: SuiteResult) -> dict:
+    """`n_<term>` / `share_<term>` are table bookkeeping. They were half the digest
+    handed to a model instructed not to repeat table numbers."""
     return {
         "name": result.name,
         "status": result.status,
         "n_items": result.n_items,
         "subscore": result.subscore,
-        "native": dict(result.native or {}),
+        "native": {
+            key: value
+            for key, value in (result.native or {}).items()
+            if not key.startswith(("n_", "share_"))
+        },
     }
 
 
@@ -193,9 +203,15 @@ def _meaning_lines(results: list[SuiteResult], *, smoke: bool) -> list[str]:
     replyer = lookup.get("replyer")
     if replyer is not None:
         native = replyer.native or {}
-        for dim in _REPLYER_DIMS:
-            if dim in native and float(native[dim]) != 10.0:
-                lines.append(f"{dim}={_fmt(native[dim])}：已决定回复之后的文案分项。")
+        below = [
+            f"{dim}={_fmt(native[dim])}"
+            for dim in _REPLYER_DIMS
+            if dim in native and float(native[dim]) != 10.0
+        ]
+        if below:
+            # One line, not one per dimension: four near-identical bullets crowded
+            # out real findings and the cap then cut the family mid-way.
+            lines.append(" ".join(below) + "：已决定回复之后的文案分项。")
 
     return lines[:_MAX_MEANINGS]
 
@@ -305,7 +321,7 @@ def _worst_entry(suite_name: str, pred, tag: str) -> dict:
     first = _first_action(suite_name, pred)
     pred_field = first if suite_name in {"planner", "e2e"} and first is not None else pred.pred
     tools = extra.get("tools_called") or []
-    return {
+    entry = {
         "suite": suite_name,
         "id": pred.id,
         "gold": pred.gold,
@@ -315,6 +331,16 @@ def _worst_entry(suite_name: str, pred, tag: str) -> dict:
         "tools_called": list(tools),
         "quote": _quote_for(suite_name, pred, tag),
     }
+    # `meaning` is a canned string shared by every item with this tag; two items
+    # can carry it and have failed for opposite reasons. These two fields are the
+    # only place the run says which.
+    comment = _clip(extra.get("comment"), _ANALYSIS)
+    if comment:
+        entry["comment"] = comment
+    analysis = _clip(extra.get("assistant_text"), _ANALYSIS)
+    if analysis and tag != "json_in_text":
+        entry["analysis"] = analysis
+    return entry
 
 
 def _worst_items(results: list[SuiteResult]) -> list[dict]:
@@ -325,5 +351,18 @@ def _worst_items(results: list[SuiteResult]) -> list[dict]:
             if tag is None:
                 continue
             found.append(_worst_entry(result.name, pred, tag))
-    found.sort(key=lambda row: (_TAG_RANK.get(row["tag"], 9), row["suite"], row["id"]))
-    return found[:_MAX_WORST]
+    found.sort(
+        key=lambda row: (
+            _TAG_RANK.get(row["tag"], 9),
+            _SUITE_CONTEXT.get(row["suite"], 9),
+            row["id"],
+        )
+    )
+    seen: set[str] = set()
+    unique = []
+    for row in found:
+        if row["id"] in seen:
+            continue
+        seen.add(row["id"])
+        unique.append(row)
+    return unique[:_MAX_WORST]
