@@ -231,9 +231,11 @@ def _replyer_messages(persona, item: dict, prompts) -> list[dict]:
         messages.append({"role": "user", "content": f"当前思考：\n{analysis}"})
     gold = item["gold"] if isinstance(item.get("gold"), dict) else {}
     msg_id = str(handoff.get("msg_id") or gold.get("reply_msg_id") or "")
+    quote_note = "本次回复会以引用这条目标消息的形式发出。" if handoff.get("set_quote") else ""
     parts = [
         f"当前时间：{stamp(int(item.get('target_t') or 0))}",
         target_block(chat, msg_id, persona.nickname),
+        quote_note,
         prompts.replyer_final_instruction,
     ]
     joined = "\n\n".join(part for part in parts if part)

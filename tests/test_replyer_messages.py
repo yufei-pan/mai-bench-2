@@ -29,3 +29,27 @@ def test_replyer_messages_role_split_and_current_thinking():
     assert any("当前时间：2026-01-01 12:00:00" in m["content"] for m in messages)
     assert any("m1" in m["content"] and "小徐" in m["content"] for m in messages)
     assert any("请自然地回复" in m["content"] for m in messages)
+
+
+def test_quoted_reply_is_visible_to_the_replyer():
+    """`set_quote` was a declared tool argument nothing read. A quoted reply is
+    attached to its target in the client, which is context for how explicitly the
+    words need to name who they answer."""
+    persona = load_persona("official", root=ROOT)
+    prompts = load_prompts("official", root=ROOT)
+    chat = [{"t": 0, "msg_id": "m1", "user": "q1", "group_card": "小徐", "text": "麦麦 在吗"}]
+    item = {
+        "channel": "group",
+        "target_t": 0,
+        "oracle_handoff": {
+            "messages": chat,
+            "reply_reference": "对方在叫我",
+            "msg_id": "m1",
+            "set_quote": True,
+        },
+    }
+    quoted = "\n".join(m["content"] for m in _replyer_messages(persona, item, prompts))
+    item["oracle_handoff"]["set_quote"] = False
+    plain = "\n".join(m["content"] for m in _replyer_messages(persona, item, prompts))
+    assert "引用" in quoted
+    assert "引用" not in plain
