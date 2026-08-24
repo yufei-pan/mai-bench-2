@@ -172,6 +172,19 @@ def _validate_pointer(item: dict, name: str) -> None:
         _bad(name, f"unknown gold override(s): {unknown}")
 
 
+def item_theme(item: dict) -> str:
+    """The gold theme an item belongs to: its first tag.
+
+    Tags are authored most-specific-first, so the head is the family the item was
+    written for (`wait`, `hostile`, `ambient`). The report groups losses by it.
+    """
+    tags = item.get("tags") or []
+    for tag in tags:
+        if str(tag):
+            return str(tag)
+    return "untagged"
+
+
 def times_msg_ids(item: dict) -> set[str]:
     return {str(message.get("msg_id")) for message in item.get("messages") or []}
 

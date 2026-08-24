@@ -433,3 +433,14 @@ def test_a_judge_outage_keeps_the_planner_work_it_already_paid_for():
     assert result.native["planner_v1"] > 0
     assert result.predictions
     assert all(p.extra.get("planner_action") == "reply" for p in result.predictions)
+
+
+def test_e2e_predictions_carry_theme_and_item_score():
+    result = run_e2e_suite(
+        _cfg(), ReplyPlanner(), ConstClient(REPLY_TEXT), ConstClient(SCORE_8),
+        _persona(), root=ROOT,
+    )
+    assert result.predictions
+    for pred in result.predictions:
+        assert isinstance(pred.extra["theme"], str) and pred.extra["theme"]
+        assert 0.0 <= pred.extra["item_score"] <= 1.0

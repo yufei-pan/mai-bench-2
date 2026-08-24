@@ -250,3 +250,13 @@ def test_gold_002_decision_point_shows_the_state_the_label_describes():
     tail = at_target[-2:]
     assert tail and all(m["text"] in blob for m in tail)
     assert all(m["text"] not in blob for m in future if m["text"].strip())
+
+
+def test_predictions_carry_the_gold_theme_and_a_per_item_score():
+    """The report groups losses by theme and writes a per-item file; predictions
+    carried neither, so neither could be built from a finished run."""
+    result = run_planner_suite(_cfg(), SilentClient(), _persona(), root=ROOT)
+    assert result.predictions
+    for pred in result.predictions:
+        assert isinstance(pred.extra["theme"], str) and pred.extra["theme"]
+        assert 0.0 <= pred.extra["item_score"] <= 1.0
