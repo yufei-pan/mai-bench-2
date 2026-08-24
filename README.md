@@ -217,6 +217,11 @@ names the three factors behind its score. Last is `WHERE THE PLANNER LOST`, the
 gold themes sorted by mean item score, so `sticker 0/4` and `addressed 11/11` do
 not hide behind one average.
 
+Each block's title names the seat whose numbers it holds — `PLANNER 53.9
+openrouter/stealth/ox-alpha @ xhigh` — and the two suites the judge scores also say
+`judged by <model>`, because the dimensions are its opinion. A suite with no term
+coverage still prints its title, so an errored run says which model errored.
+
 Every table goes through `TSVZ.pretty_format_table(..., full=True)`, so stdout and
 `table.txt` are identical and columns cannot drift. Cells stay ASCII: TSVZ measures
 width with `len()`, which counts a CJK character as one column when a terminal

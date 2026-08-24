@@ -228,11 +228,16 @@ def test_table_prints_seat_model_and_thinking():
         smoke=True,
         cfg=cfg,
     )
-    persona_at = table.index("persona_id=")
-    footer = table[persona_at:]
-    assert "planner  model=planner-m  thinking=max" in footer
-    assert "replyer  model=replyer-m  thinking=low" in footer
-    assert "judge  model=judge-m  thinking=-" in footer
+    # every seat is named on the block whose numbers it produced
+    planner_title = [ln for ln in table.splitlines() if ln.startswith("PLANNER")][0]
+    assert "planner-m @ max" in planner_title
+    replyer_table = render_table(
+        [SuiteResult("replyer", "ok", {"style": 9.0}, 90.0, UsageSplit(), 1.0, 3)],
+        HeadlineOutcome({}, []), persona=_P(), smoke=False, cfg=cfg,
+    )
+    replyer_title = [ln for ln in replyer_table.splitlines() if ln.startswith("REPLYER")][0]
+    assert "replyer-m @ low" in replyer_title
+    assert "judged by judge-m" in replyer_title
 
 
 def test_table_omits_unconfigured_seats():
@@ -253,15 +258,17 @@ def test_table_omits_unconfigured_seats():
         smoke=True,
         cfg=cfg,
     )
-    assert "planner  model=planner-m  thinking=max" in table
-    assert "replyer  model=" not in table
-    assert "judge  model=" not in table
+    title = [ln for ln in table.splitlines() if ln.startswith("PLANNER")][0]
+    assert "planner-m @ max" in title
+    assert "replyer-m" not in table
+    assert "judged by" not in table
 
 
-def test_table_without_cfg_has_no_seat_lines():
+def test_table_without_cfg_names_no_seats():
     table = _table()
     assert "thinking=" not in table
     assert "  model=" not in table
+    assert "judged by" not in table
 
 
 # --- term coverage ---------------------------------------------------------
@@ -478,3 +485,104 @@ def test_a_single_contract_failure_is_not_pluralised():
     )
     assert "1 contract failure ·" in table
     assert "1 contract failures" not in table
+
+
+# --- the seat that produced a number belongs next to it ---------------------
+
+
+def _seat_cfg():
+    return AppConfig(
+        EndpointConfig("http://p/v1", "k", "openrouter/stealth/ox-alpha", reasoning_effort="xhigh"),
+        EndpointConfig("http://r/v1", "k", "openrouter/stealth/ox-alpha", reasoning_effort="high"),
+        EndpointConfig("http://j/v1", "k", "cursor/grok-4.6-xhigh", reasoning_effort="xhigh"),
+        RunConfig(), SuiteConfig(), SuiteConfig(), SuiteConfig(), "c.toml",
+    )
+
+
+def test_planner_block_title_names_the_planner_seat():
+    table = render_table(
+        [_planner_result()], HeadlineOutcome({}, []), persona=_P(), smoke=False, cfg=_seat_cfg()
+    )
+    title = [ln for ln in table.splitlines() if ln.startswith("PLANNER")][0]
+    assert "53.9" in title
+    assert "openrouter/stealth/ox-alpha @ xhigh" in title
+
+
+def test_replyer_block_title_names_its_writer_and_its_judge():
+    """The dimensions are the judge's opinion, so which judge wrote them matters
+    as much as which model wrote the words."""
+    table = render_table(
+        [SuiteResult("replyer", "ok", {"in_character": 8.0}, 88.7, UsageSplit(), 1.0, 114)],
+        HeadlineOutcome({}, []), persona=_P(), smoke=False, cfg=_seat_cfg(),
+    )
+    title = [ln for ln in table.splitlines() if ln.startswith("REPLYER")][0]
+    assert "openrouter/stealth/ox-alpha @ high" in title
+    assert "judged by cursor/grok-4.6-xhigh @ xhigh" in title
+
+
+def test_e2e_block_title_names_all_three_seats():
+    native = dict(PLANNER_NATIVE, planner_v1=56.34, joint=59.8, replyer_v1=90.33)
+    table = render_table(
+        [SuiteResult("e2e", "ok", native, 67.26, UsageSplit(), 1.0, 148)],
+        HeadlineOutcome({}, []), persona=_P(), smoke=False, cfg=_seat_cfg(),
+    )
+    block = table[table.index("E2E"):]
+    title = block.splitlines()[0]
+    assert "openrouter/stealth/ox-alpha @ xhigh" in title  # planner
+    assert "openrouter/stealth/ox-alpha @ high" in title  # replyer
+    assert "judged by cursor/grok-4.6-xhigh @ xhigh" in title
+    # the factors move to the footer so the title stays about the seats
+    assert "geometric mean" in block
+    assert "geometric mean" not in title
+
+
+def test_seat_lines_no_longer_repeat_in_the_footer():
+    table = render_table(
+        [_planner_result()], HeadlineOutcome({}, []), persona=_P(), smoke=False, cfg=_seat_cfg()
+    )
+    assert "model=" not in table
+    assert "thinking=" not in table
+
+
+def test_a_seat_with_no_reasoning_effort_is_named_without_one():
+    cfg = AppConfig(
+        EndpointConfig("http://p/v1", "k", "plain-m"), None, None,
+        RunConfig(), SuiteConfig(), SuiteConfig(), SuiteConfig(), "c.toml",
+    )
+    table = render_table(
+        [_planner_result()], HeadlineOutcome({}, []), persona=_P(), smoke=False, cfg=cfg
+    )
+    title = [ln for ln in table.splitlines() if ln.startswith("PLANNER")][0]
+    assert "plain-m" in title
+    assert "@" not in title
+
+
+def test_block_titles_survive_a_run_without_cfg():
+    table = render_table(
+        [_planner_result()], HeadlineOutcome({}, []), persona=_P(), smoke=False
+    )
+    title = [ln for ln in table.splitlines() if ln.startswith("PLANNER")][0]
+    assert title.strip() == "PLANNER  53.9"
+
+
+def test_a_single_emote_round_is_not_pluralised():
+    table = render_table(
+        [SuiteResult("planner", "ok", dict(PLANNER_NATIVE, emote=1.0), 50.0,
+                     UsageSplit(), 1.0, 148)],
+        HeadlineOutcome({}, []), persona=_P(), smoke=False,
+    )
+    footer = [ln for ln in table.splitlines() if "emote-only" in ln][0]
+    assert footer.strip().endswith("1 emote-only round")
+    assert "1 emote-only rounds" not in table
+
+
+def test_e2e_factors_get_their_own_footer_line():
+    """Factors plus counts on one line ran to 130 characters."""
+    native = dict(PLANNER_NATIVE, planner_v1=56.34, joint=59.8, replyer_v1=90.33)
+    table = render_table(
+        [SuiteResult("e2e", "ok", native, 67.26, UsageSplit(), 1.0, 148)],
+        HeadlineOutcome({}, []), persona=_P(), smoke=False,
+    )
+    factor_line = [ln for ln in table.splitlines() if "geometric mean" in ln][0]
+    assert "contract failure" not in factor_line
+    assert max(len(ln) for ln in table.splitlines()) < 120
