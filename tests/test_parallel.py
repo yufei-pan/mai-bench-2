@@ -1,6 +1,6 @@
 import threading
 
-from mai_bench2.parallel import map_items
+from mai_bench2.parallel import Abandoned, RunControl, map_items
 
 
 class RecordingProgress:
@@ -96,3 +96,79 @@ def test_map_items_clamps_non_positive_concurrency():
         lambda item: item["id"], [{"id": "a"}], concurrency=0, progress=None, suite="planner"
     )
     assert out == ["a"]
+
+
+def test_drain_does_not_start_the_rest():
+    started = []
+    released = threading.Event()
+    control = RunControl()
+
+    def fn(item):
+        started.append(item["id"])
+        if item["id"] in {"a", "b"}:
+            released.wait(timeout=2)
+        return item["id"]
+
+    def killer():
+        while len(started) < 2:
+            pass
+        control.request_drain()
+        released.set()
+
+    threading.Thread(target=killer, daemon=True).start()
+    out = map_items(
+        fn,
+        [{"id": x} for x in "abcd"],
+        concurrency=2,
+        progress=None,
+        suite="planner",
+        control=control,
+    )
+    assert out[0] == "a" and out[1] == "b"
+    assert out[2] is None and out[3] is None
+    assert set(started) == {"a", "b"}
+
+
+def test_abandon_marks_in_flight():
+    started = threading.Barrier(3)  # two workers + test thread
+    control = RunControl()
+    hold = threading.Event()
+
+    def fn(item):
+        started.wait(timeout=2)
+        hold.wait(timeout=2)
+        return item["id"]
+
+    def killer():
+        started.wait(timeout=2)
+        control.request_abandon()
+        hold.set()
+
+    threading.Thread(target=killer, daemon=True).start()
+    out = map_items(
+        fn,
+        [{"id": "a"}, {"id": "b"}, {"id": "c"}],
+        concurrency=2,
+        progress=None,
+        suite="planner",
+        control=control,
+    )
+    assert out[2] is None
+    assert all(slot in {"a", "b", None} or isinstance(slot, Abandoned) for slot in out[:2])
+
+
+def test_on_item_not_called_for_unstarted(tmp_path=None):
+    seen = []
+    control = RunControl()
+    control.request_drain()
+    out = map_items(
+        lambda item: item["id"],
+        [{"id": "a"}, {"id": "b"}],
+        concurrency=1,
+        progress=None,
+        suite="planner",
+        control=control,
+        on_item=lambda item, result: seen.append(item["id"]),
+    )
+    assert out == [None, None]
+    assert seen == []

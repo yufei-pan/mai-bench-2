@@ -22,6 +22,7 @@ from mai_bench2.checkpoint import (
     update_item,
 )
 from mai_bench2.config import EndpointConfig
+from mai_bench2.parallel import Abandoned
 from mai_bench2.planner_loop import PlannerTrace, planner_trace_from_payload
 
 
@@ -68,6 +69,11 @@ def test_load_garbage_is_corrupt(tmp_path: Path):
     (tmp_path / "checkpoint.json").write_text("{not json", encoding="utf-8")
     with pytest.raises(CheckpointError, match="corrupt checkpoint"):
         load_checkpoint(tmp_path)
+
+
+def test_classify_abandoned():
+    status, payload, error = classify_item("planner", Abandoned())
+    assert status == "abandoned"
 
 
 def test_classify_planner_exception_is_transport_fail():
