@@ -51,6 +51,12 @@ class PlannerTrace:
     wait_rest: bool = False
 
 
+def planner_trace_from_payload(payload: dict) -> PlannerTrace:
+    data = dict(payload)
+    data["tool_hits"] = [tuple(item) for item in (data.get("tool_hits") or [])]
+    return PlannerTrace(**data)
+
+
 def run_planner_loop(
     client,
     persona,
