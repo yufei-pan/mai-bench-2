@@ -42,7 +42,13 @@ _SEAT_REQUIRED = {
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="mai-bench-2")
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == "resume":
+        return _parse_resume_args(argv[1:])
+    parser = argparse.ArgumentParser(
+        prog="mai-bench-2",
+        epilog="resume  continue an incomplete run (mai-bench-2 resume -h)",
+    )
     parser.add_argument(
         "suite",
         nargs="?",
@@ -87,7 +93,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Gold items in flight per suite (default 1)",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    args.command = "run"
+    return args
+
+
+def _parse_resume_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="mai-bench-2 resume")
+    parser.add_argument("--stamp", default=None, help="UTC stamp of the run to resume")
+    parser.add_argument("--config", default=None, help="Path to config.toml")
+    args = parser.parse_args(argv)
+    args.command = "resume"
+    return args
 
 
 def find_config(explicit: str | None) -> Path:
@@ -314,6 +331,9 @@ def _build_clients(cfg: AppConfig) -> dict[str, ChatClient]:
 
 def console(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
+    if getattr(args, "command", "run") == "resume":
+        print("resume not wired", file=sys.stderr)
+        sys.exit(2)
     try:
         package_root = Path(__file__).resolve().parents[2]
         path = find_config(args.config)

@@ -61,6 +61,7 @@ def _assert_argparse_help(out: str) -> None:
     assert "planner" in out
     assert "replyer" in out
     assert "e2e" in out
+    assert "resume" in out
     assert "{run,smoke,full}" not in out
 
 
@@ -123,3 +124,31 @@ def test_full_console_prepends_full(monkeypatch):
     with pytest.raises(SystemExit):
         cli_mod.full_console()
     assert captured["argv"] == ["--full", "--no-cache"]
+
+
+def test_parse_resume_subcommand():
+    ns = parse_args(["resume"])
+    assert ns.command == "resume"
+    assert ns.stamp is None
+    assert ns.config is None
+
+
+def test_parse_resume_stamp():
+    ns = parse_args(["resume", "--stamp", "2026-08-25T000000Z", "--config", "c.toml"])
+    assert ns.stamp == "2026-08-25T000000Z"
+    assert ns.config == "c.toml"
+
+
+def test_parse_resume_rejects_full():
+    with pytest.raises(SystemExit) as exited:
+        parse_args(["resume", "--full"])
+    assert exited.value.code == 2
+
+
+def test_resume_help(capsys):
+    with pytest.raises(SystemExit) as exited:
+        parse_args(["resume", "-h"])
+    assert exited.value.code == 0
+    out = capsys.readouterr().out
+    assert "--stamp" in out
+    assert "--repeats" not in out
