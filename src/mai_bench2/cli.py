@@ -142,6 +142,8 @@ def run_suites(
     persona=None,
     prompts=None,
     progress=None,
+    control=None,
+    on_item=None,
 ) -> tuple[list[SuiteResult], int]:
     """If suite_flag set and required seat missing: raise ConfigError.
     Probe planner endpoint if planner suite or e2e requested.
@@ -207,7 +209,15 @@ def run_suites(
                         client.set_sample(sample)
                 progress.set_sample(sample + 1)
                 result = _run_one(
-                    name, cfg, clients, persona, root, prompts, progress=progress
+                    name,
+                    cfg,
+                    clients,
+                    persona,
+                    root,
+                    prompts,
+                    progress=progress,
+                    control=control,
+                    on_item=on_item,
                 )
                 if result.subscore is not None:
                     samples.append(float(result.subscore))
@@ -256,10 +266,19 @@ def _probe_seats(clients: dict, names: list[str]) -> dict[str, str]:
     return errors
 
 
-def _run_one(name, cfg, clients, persona, root, prompts=None, progress=None) -> SuiteResult:
+def _run_one(
+    name, cfg, clients, persona, root, prompts=None, progress=None, control=None, on_item=None
+) -> SuiteResult:
     if name == "planner":
         return run_planner_suite(
-            cfg, clients.get("planner"), persona, root=root, prompts=prompts, progress=progress
+            cfg,
+            clients.get("planner"),
+            persona,
+            root=root,
+            prompts=prompts,
+            progress=progress,
+            control=control,
+            on_item=on_item,
         )
     if name == "replyer":
         return run_replyer_suite(
@@ -270,6 +289,8 @@ def _run_one(name, cfg, clients, persona, root, prompts=None, progress=None) -> 
             root=root,
             prompts=prompts,
             progress=progress,
+            control=control,
+            on_item=on_item,
         )
     return run_e2e_suite(
         cfg,
@@ -280,6 +301,8 @@ def _run_one(name, cfg, clients, persona, root, prompts=None, progress=None) -> 
         root=root,
         prompts=prompts,
         progress=progress,
+        control=control,
+        on_item=on_item,
     )
 
 

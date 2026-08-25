@@ -17,7 +17,7 @@ from mai_bench2.metrics import (
     replyer_v1,
     silent_row,
 )
-from mai_bench2.parallel import map_items
+from mai_bench2.parallel import Abandoned, RunControl, map_items
 from mai_bench2.persona import Persona
 from mai_bench2.planner_loop import PlannerTrace, run_planner_loop
 from mai_bench2.prompts import Prompts
@@ -51,6 +51,9 @@ def run_e2e_suite(
     root: Path,
     prompts: Prompts | None = None,
     progress=None,
+    only_ids: set[str] | None = None,
+    control: RunControl | None = None,
+    on_item=None,
 ) -> SuiteResult:
     if cfg.planner is None:
         return SuiteResult(
@@ -117,6 +120,8 @@ def run_e2e_suite(
         smoke=cfg.run.smoke,
         smoke_n=min(cfg.e2e_suite.smoke_n, len(items)),
     )
+    if only_ids is not None:
+        selected = [item for item in selected if str(item.get("id") or "") in only_ids]
 
     def _one(item: dict) -> _E2eOne:
         trace = run_planner_loop(
@@ -197,6 +202,8 @@ def run_e2e_suite(
         concurrency=cfg.run.concurrency,
         progress=progress,
         suite="e2e",
+        control=control,
+        on_item=on_item,
     )
     scored: list[tuple[dict, PlannerTrace]] = []
     joints: list[float] = []
@@ -207,6 +214,10 @@ def run_e2e_suite(
     judge_unparsed = 0
     judge_transport = 0
     for item, result in zip(selected, mapped):
+        if result is None:
+            continue
+        if isinstance(result, Abandoned):
+            continue
         if isinstance(result, Exception):
             failures += 1
             first_error = first_error or f"{type(result).__name__}: {result}"
