@@ -204,25 +204,10 @@ def _resume_console(args) -> int:
     package_root = Path(__file__).resolve().parents[2]
     try:
         output_dir = resolve_output_dir(args.config)
-        cfg = None
-        try:
-            path = _config_path(args.config)
-        except ConfigError:
-            if args.config is not None:
-                raise
-            path = None
-        if path is not None:
-            cfg = load_config(path)
-        gold_ids: dict[str, list[str]] = {}
-        if cfg is not None:
-            if args.stamp:
-                gold_ids = _gold_ids_for_stamp(output_dir / args.stamp, package_root, cfg)
-            else:
-                gold_ids = gold_ids_for(package_root, cfg.run.smoke, cfg)
         ckpt = load_resume_target(
             output_dir,
             args.stamp,
-            gold_ids=gold_ids,
+            gold_ids={},
             tty=sys.stdin.isatty(),
             stdin=sys.stdin,
             stdout=sys.stdout,
@@ -236,8 +221,10 @@ def _resume_console(args) -> int:
                 "warning: checkpoint state is running; if a live process still owns this stamp, stop it first",
                 file=sys.stderr,
             )
-        if cfg is None:
+        path = _config_path(args.config)
+        if path is None:
             raise ConfigError("config not found: ./config.toml or ~/.config/mai-bench-2/config.toml")
+        cfg = load_config(path)
         warnings = gate_resume(ckpt, cfg, root=package_root, package_root=package_root)
         for line in warnings:
             print(line, file=sys.stderr)

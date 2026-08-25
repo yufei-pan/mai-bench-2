@@ -83,7 +83,9 @@ def _ckpt_for(cfg: AppConfig, **kwargs) -> Checkpoint:
     )
 
 
-def _write_config(tmp_path: Path, *, output_dir: Path | None = None) -> tuple[Path, Path]:
+def _write_config(
+    tmp_path: Path, *, output_dir: Path | None = None, api_key: str = "SECRET_KEY"
+) -> tuple[Path, Path]:
     out_dir = output_dir if output_dir is not None else tmp_path / "results"
     out_dir.mkdir(parents=True, exist_ok=True)
     cfg_path = tmp_path / "config.toml"
@@ -92,7 +94,7 @@ def _write_config(tmp_path: Path, *, output_dir: Path | None = None) -> tuple[Pa
             [
                 "[planner]",
                 'base_url = "http://p/v1"',
-                'api_key = "SECRET_KEY"',
+                f'api_key = "{api_key}"',
                 'model = "m"',
                 'reasoning_effort = "high"',
                 "[run]",
@@ -210,6 +212,50 @@ def test_resume_stamp_unknown(tmp_path, capsys):
         console(["resume", "--stamp", "nope", "--config", str(cfg_path)])
     assert exited.value.code == 1
     assert "unknown stamp" in capsys.readouterr().err
+
+
+def test_resume_already_complete_without_api_key_env(tmp_path, capsys, monkeypatch):
+    monkeypatch.delenv("MISSING_RESUME_KEY", raising=False)
+    cfg_path, out_dir = _write_config(tmp_path, api_key="${MISSING_RESUME_KEY}")
+    stamp = "2026-08-25T000000Z"
+    stamp_dir = out_dir / stamp
+    stamp_dir.mkdir()
+    save_checkpoint(
+        stamp_dir,
+        _ckpt_for(
+            _planner_cfg(),
+            stamp=stamp,
+            state="complete",
+            items=[ItemRecord("planner", "p-1", 0, "ok", payload={})],
+        ),
+    )
+    with pytest.raises(SystemExit) as exited:
+        console(["resume", "--stamp", stamp, "--config", str(cfg_path)])
+    assert exited.value.code == 0
+    assert "already complete" in capsys.readouterr().out
+
+
+def test_resume_unknown_stamp_without_api_key_env(tmp_path, capsys, monkeypatch):
+    monkeypatch.delenv("MISSING_RESUME_KEY", raising=False)
+    cfg_path, _out_dir = _write_config(tmp_path, api_key="${MISSING_RESUME_KEY}")
+    with pytest.raises(SystemExit) as exited:
+        console(["resume", "--stamp", "nope", "--config", str(cfg_path)])
+    assert exited.value.code == 1
+    err = capsys.readouterr().err
+    assert "unknown stamp" in err
+    assert "MISSING_RESUME_KEY" not in err
+
+
+def test_resume_no_tty_empty_without_api_key_env(tmp_path, capsys, monkeypatch):
+    monkeypatch.delenv("MISSING_RESUME_KEY", raising=False)
+    cfg_path, _out_dir = _write_config(tmp_path, api_key="${MISSING_RESUME_KEY}")
+    monkeypatch.setattr("sys.stdin", SimpleNamespace(isatty=lambda: False))
+    with pytest.raises(SystemExit) as exited:
+        console(["resume", "--config", str(cfg_path)])
+    assert exited.value.code == 1
+    err = capsys.readouterr().err
+    assert "no resumable runs" in err
+    assert "MISSING_RESUME_KEY" not in err
 
 
 def test_resume_already_complete(tmp_path, capsys):
