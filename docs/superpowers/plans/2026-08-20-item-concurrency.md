@@ -21,7 +21,7 @@
 - Do not change scoring formulas, headlines, table, digest/gloss, cache keys, or `set_sample` (main thread, before the pass).
 - Commits: do not run `git config`. Do not `--no-verify`. Do not push.
 - Run only the tests named in the task until that task’s end; full pytest in Task 7.
-- Tests: `PYTHONPATH=src /mnt/klein/work/mai-bench-2/.venv/bin/python -m pytest <args>` from the worktree. On a checkout whose `.venv` is local: `PYTHONPATH=src .venv/bin/python -m pytest <args>`.
+- Tests: `PYTHONPATH=src .venv/bin/python -m pytest <args>`.
 
 ## File map
 
@@ -117,7 +117,7 @@ def test_apply_overrides_concurrency_negative_becomes_one():
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `PYTHONPATH=src /mnt/klein/work/mai-bench-2/.venv/bin/python -m pytest tests/test_cli_help.py tests/test_config.py tests/test_cli_run.py::test_apply_overrides_concurrency_from_flag tests/test_cli_run.py::test_apply_overrides_concurrency_zero_becomes_one tests/test_cli_run.py::test_apply_overrides_concurrency_negative_becomes_one -v`
+Run: `PYTHONPATH=src .venv/bin/python -m pytest tests/test_cli_help.py tests/test_config.py tests/test_cli_run.py::test_apply_overrides_concurrency_from_flag tests/test_cli_run.py::test_apply_overrides_concurrency_zero_becomes_one tests/test_cli_run.py::test_apply_overrides_concurrency_negative_becomes_one -v`
 
 Expected: FAIL — `Namespace` has no `concurrency` and/or `RunConfig` has no `concurrency`.
 
@@ -149,7 +149,7 @@ concurrency = 1
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `PYTHONPATH=src /mnt/klein/work/mai-bench-2/.venv/bin/python -m pytest tests/test_cli_help.py tests/test_config.py tests/test_cli_run.py::test_apply_overrides_from_parse_args tests/test_cli_run.py::test_apply_overrides_concurrency_from_flag tests/test_cli_run.py::test_apply_overrides_concurrency_zero_becomes_one tests/test_cli_run.py::test_apply_overrides_concurrency_negative_becomes_one -v`
+Run: `PYTHONPATH=src .venv/bin/python -m pytest tests/test_cli_help.py tests/test_config.py tests/test_cli_run.py::test_apply_overrides_from_parse_args tests/test_cli_run.py::test_apply_overrides_concurrency_from_flag tests/test_cli_run.py::test_apply_overrides_concurrency_zero_becomes_one tests/test_cli_run.py::test_apply_overrides_concurrency_negative_becomes_one -v`
 
 Expected: PASS
 
@@ -313,7 +313,7 @@ def test_map_items_clamps_non_positive_concurrency():
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `PYTHONPATH=src /mnt/klein/work/mai-bench-2/.venv/bin/python -m pytest tests/test_parallel.py tests/test_progress.py::test_complete_is_item_then_advance tests/test_progress.py::test_run_progress_complete_is_silent_when_not_a_tty -v`
+Run: `PYTHONPATH=src .venv/bin/python -m pytest tests/test_parallel.py tests/test_progress.py::test_complete_is_item_then_advance tests/test_progress.py::test_run_progress_complete_is_silent_when_not_a_tty -v`
 
 Expected: FAIL — `mai_bench2.parallel` missing, and/or `RunProgress` has no `complete`.
 
@@ -383,7 +383,7 @@ def _pool(fn, items, workers: int, progress, suite) -> list:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `PYTHONPATH=src /mnt/klein/work/mai-bench-2/.venv/bin/python -m pytest tests/test_parallel.py tests/test_progress.py -v`
+Run: `PYTHONPATH=src .venv/bin/python -m pytest tests/test_parallel.py tests/test_progress.py -v`
 
 Expected: PASS
 
@@ -453,7 +453,7 @@ This pins concurrent `chat` + two cache files. It may pass without a lock (diffe
 
 - [ ] **Step 2: Run the test**
 
-Run: `PYTHONPATH=src /mnt/klein/work/mai-bench-2/.venv/bin/python -m pytest tests/test_client.py::test_cache_writes_from_two_threads -v`
+Run: `PYTHONPATH=src .venv/bin/python -m pytest tests/test_client.py::test_cache_writes_from_two_threads -v`
 
 Expected: FAIL if usage updates race badly, otherwise PASS — then still implement the lock.
 
@@ -487,7 +487,7 @@ Leave the cache **read** path unchanged.
 
 - [ ] **Step 4: Re-run client tests**
 
-Run: `PYTHONPATH=src /mnt/klein/work/mai-bench-2/.venv/bin/python -m pytest tests/test_client.py -v`
+Run: `PYTHONPATH=src .venv/bin/python -m pytest tests/test_client.py -v`
 
 Expected: PASS
 
@@ -558,7 +558,7 @@ These may pass on the old serial loop. Keep them. Replacing the loop with `map_i
 
 - [ ] **Step 2: Run tests**
 
-Run: `PYTHONPATH=src /mnt/klein/work/mai-bench-2/.venv/bin/python -m pytest tests/test_progress.py::test_planner_concurrency_two_ticks_all_failures tests/test_progress.py::test_planner_concurrency_two_matches_serial_subscore tests/test_suite_planner.py -v`
+Run: `PYTHONPATH=src .venv/bin/python -m pytest tests/test_progress.py::test_planner_concurrency_two_ticks_all_failures tests/test_progress.py::test_planner_concurrency_two_matches_serial_subscore tests/test_suite_planner.py -v`
 
 Expected: PASS (characterization) or FAIL if `concurrency` is missing (Task 1 not done).
 
@@ -611,7 +611,7 @@ Replace the `for item in selected:` block (including the `scored` / `failures` i
 
 - [ ] **Step 4: Run planner tests**
 
-Run: `PYTHONPATH=src /mnt/klein/work/mai-bench-2/.venv/bin/python -m pytest tests/test_suite_planner.py tests/test_progress.py -v`
+Run: `PYTHONPATH=src .venv/bin/python -m pytest tests/test_suite_planner.py tests/test_progress.py -v`
 
 Expected: PASS
 
@@ -661,7 +661,7 @@ def test_replyer_concurrency_two_ticks_all_failures():
 
 - [ ] **Step 2: Run the test plus replyer suite tests**
 
-Run: `PYTHONPATH=src /mnt/klein/work/mai-bench-2/.venv/bin/python -m pytest tests/test_progress.py::test_replyer_concurrency_two_ticks_all_failures tests/test_suite_replyer.py -v`
+Run: `PYTHONPATH=src .venv/bin/python -m pytest tests/test_progress.py::test_replyer_concurrency_two_ticks_all_failures tests/test_suite_replyer.py -v`
 
 Expected: PASS on the old loop. Still do Step 3.
 
@@ -742,7 +742,7 @@ Keep the `dropped` / status / `replyer_v1` tail unchanged.
 
 - [ ] **Step 4: Run replyer tests**
 
-Run: `PYTHONPATH=src /mnt/klein/work/mai-bench-2/.venv/bin/python -m pytest tests/test_suite_replyer.py tests/test_progress.py -v`
+Run: `PYTHONPATH=src .venv/bin/python -m pytest tests/test_suite_replyer.py tests/test_progress.py -v`
 
 Expected: PASS
 
@@ -793,7 +793,7 @@ def test_e2e_concurrency_two_ticks_all_failures():
 
 - [ ] **Step 2: Run the test plus e2e suite tests**
 
-Run: `PYTHONPATH=src /mnt/klein/work/mai-bench-2/.venv/bin/python -m pytest tests/test_progress.py::test_e2e_concurrency_two_ticks_all_failures tests/test_suite_e2e.py -v`
+Run: `PYTHONPATH=src .venv/bin/python -m pytest tests/test_progress.py::test_e2e_concurrency_two_ticks_all_failures tests/test_suite_e2e.py -v`
 
 Expected: PASS on the old loop. Still do Step 3.
 
@@ -913,7 +913,7 @@ Keep the native / `pair_v1` / `n_items=len(scored) - judge_unparsed` tail unchan
 
 - [ ] **Step 4: Run e2e tests**
 
-Run: `PYTHONPATH=src /mnt/klein/work/mai-bench-2/.venv/bin/python -m pytest tests/test_suite_e2e.py tests/test_progress.py -v`
+Run: `PYTHONPATH=src .venv/bin/python -m pytest tests/test_suite_e2e.py tests/test_progress.py -v`
 
 Expected: PASS
 
@@ -958,7 +958,7 @@ In `test_example_config_seats_env_smoke_and_temps`, add:
 
 - [ ] **Step 2: Run docs tests to verify they fail**
 
-Run: `PYTHONPATH=src /mnt/klein/work/mai-bench-2/.venv/bin/python -m pytest tests/test_docs.py -v`
+Run: `PYTHONPATH=src .venv/bin/python -m pytest tests/test_docs.py -v`
 
 Expected: FAIL on `--concurrency` missing from README (`concurrency = 1` in the example already from Task 1).
 
@@ -975,7 +975,7 @@ another. Example: `mai-bench-2 run --full --concurrency 8`.
 
 - [ ] **Step 4: Full pytest**
 
-Run: `PYTHONPATH=src /mnt/klein/work/mai-bench-2/.venv/bin/python -m pytest -q`
+Run: `PYTHONPATH=src .venv/bin/python -m pytest -q`
 
 Expected: all passed.
 

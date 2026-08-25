@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Extract anonymized chat tapes from maiGoLLMRouter planner/replyer logs."""
+"""Extract anonymized chat tapes from maiGoLLMRouter planner/replyer logs.
+
+Usage: extract_tapes.py <maiGoLLMRouter-logs-dir>
+"""
 
 from __future__ import annotations
 
@@ -16,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from goldkit import M, SELF_MAX_CHARS, counted  # noqa: E402
 
-LOGS = Path("/mnt/klein/work/maiGoLLMRouter/logs")
+LOGS = Path()
 OUT = ROOT / "tools" / "tapes"
 
 CAST = (
@@ -439,7 +442,16 @@ def write_tapes(tapes: list[tuple[str, str, list[M]]]) -> None:
         )
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv
+    if len(args) != 1:
+        print("usage: extract_tapes.py <maiGoLLMRouter-logs-dir>", file=sys.stderr)
+        return 2
+    global LOGS
+    LOGS = Path(args[0])
+    if not LOGS.is_dir():
+        print(f"not a directory: {LOGS}", file=sys.stderr)
+        return 2
     stems = sample_stems(index_rows())
     groups: list[tuple[int, str, list[M]]] = []
     privates: list[tuple[int, str, list[M]]] = []

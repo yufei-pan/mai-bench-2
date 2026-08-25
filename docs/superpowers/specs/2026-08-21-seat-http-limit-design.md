@@ -3,7 +3,7 @@
 **Date:** 2026-08-21  
 **Status:** Draft (brainstorming); awaiting spec review  
 **Author:** Yufei Pan / AI-assisted design  
-**Repo:** `/mnt/klein/work/mai-bench-2`
+**Repo:** mai-bench-2
 
 This spec adds an optional **in-flight HTTP cap per seat** on the shared `ChatClient`. It does **not** change `run.concurrency` (gold items in the current suite), scoring, gold order, cache keys, or intra-item sequencing. It sits on top of item concurrency (`docs/superpowers/specs/2026-08-20-item-concurrency-design.md`). That spec’s “no HTTP semaphore” non-goal is replaced by this document for **per-seat** limits only.
 

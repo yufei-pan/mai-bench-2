@@ -3,8 +3,8 @@
 **Date:** 2026-08-21  
 **Status:** Approved (chat); ready for implementation  
 **Author:** Yufei Pan / AI-assisted design  
-**Repo:** `/mnt/klein/work/mai-bench-2`  
-**Log source:** `/mnt/klein/work/maiGoLLMRouter/logs` (planner = system starts `你是规划器模块`, replyer = `你是回复器模块`)
+**Repo:** mai-bench-2  
+**Log source:** a maiGoLLMRouter `logs/` directory (planner = system starts `你是规划器模块`, replyer = `你是回复器模块`)
 
 ## Purpose
 

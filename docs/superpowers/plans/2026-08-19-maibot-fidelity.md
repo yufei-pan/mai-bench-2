@@ -6,7 +6,7 @@
 
 **Architecture:** Keep the fake-tool logical-clock harness. Replace `official` persona strings with `official_configs.py` Field defaults; copy zh-CN `maisaka_chat.prompt` / `maisaka_replyer.prompt` byte-for-byte; idle is analysis-plus-no-tools; `reply` uses official args; replyer history is role-split. No MaiBot import.
 
-**Tech Stack:** Existing package: Python 3.11+, `tomllib`, pytest, `mai_bench2`. Upstream copy source: `/mnt/klein/work/maibot-plugins/MaiBot`.
+**Tech Stack:** Existing package: Python 3.11+, `tomllib`, pytest, `mai_bench2`. Upstream copy source: `MaiBot`.
 
 **Spec:** `docs/superpowers/specs/2026-08-19-maibot-fidelity-design.md`
 
@@ -406,7 +406,7 @@ Rewrite `prompts.py` `Prompts` / `_HEX_KEYS` / `load_prompts` to the interface a
 id = "official"
 
 [planner]
-system = """...byte copy of /mnt/klein/work/maibot-plugins/MaiBot/prompts/zh-CN/maisaka_chat.prompt..."""
+system = """...byte copy of MaiBot/prompts/zh-CN/maisaka_chat.prompt..."""
 final_assistant_reminder = "我需要输出对{bot_name}发言的分析，视情况输出文本内容的分析，思考是否进行工具调用"
 
 [planner.query_memory_rule]
@@ -414,7 +414,7 @@ group = "- query_memory()：只有回复明显依赖群内过去对话、共同�
 private = "- query_memory()：当对方提到“之前”“上次”“最近”“还记得吗”“我喜欢”“我说过”等信号，或回复依赖长期偏好、先前承诺、共同经历、人物长期信息时，可以更积极检索。"
 
 [replyer]
-system = """...byte copy of /mnt/klein/work/maibot-plugins/MaiBot/prompts/zh-CN/maisaka_replyer.prompt..."""
+system = """...byte copy of MaiBot/prompts/zh-CN/maisaka_replyer.prompt..."""
 output_instruction = "请注意不要输出多余内容(包括不必要的前后缀，冒号，括号，表情包，@等 )，只输出发言内容就好。"
 final_instruction = "请自然地回复。不要输出多余说明、括号、@ 或额外标记，只输出实际要发言的内容。"
 
@@ -1028,7 +1028,6 @@ Run: `pytest tests/test_gold.py::test_shipped_gold_loads_under_maibot_handoff -v
 - [ ] **Step 3: Edit tables and regenerate**
 
 ```bash
-cd /mnt/klein/work/mai-bench-2
 python tools/build_gold.py
 ```
 
