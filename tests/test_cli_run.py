@@ -24,7 +24,7 @@ import json
 import sys
 
 from conftest import ROOT
-from mai_bench2.cli import console, find_config, run_suites
+from mai_bench2.cli import _gold_ids_for_run, console, find_config, run_suites
 from mai_bench2.types import SuiteResult, UsageSplit
 _PLANNER = EndpointConfig("http://p/v1", "SECRET_KEY", "m")
 _REPLYER = EndpointConfig("http://r/v1", "SECRET_KEY", "m")
@@ -687,3 +687,96 @@ def test_install_run_signals_sigint_then_sigterm():
     finally:
         signal_mod.signal(signal_mod.SIGINT, previous_int)
         signal_mod.signal(signal_mod.SIGTERM, previous_term)
+
+
+def test_gold_ids_for_run_e2e_smoke_matches_hydrated_select():
+    from mai_bench2.gold import load_gold, select_items
+    from mai_bench2.suites.e2e import _hydrate
+
+    cfg = _cfg(
+        planner=_PLANNER,
+        replyer=_REPLYER,
+        judge=_JUDGE,
+        suite_flag="e2e",
+        run=RunConfig(smoke=True),
+    )
+    planned = _gold_ids_for_run(cfg, ROOT)["e2e"]
+    items = _hydrate(load_gold(ROOT, "e2e"), ROOT)
+    expected = [
+        str(item.get("id") or "")
+        for item in select_items(
+            items,
+            smoke=True,
+            smoke_n=min(cfg.e2e_suite.smoke_n, len(items)),
+        )
+    ]
+    assert planned == expected
+    raw = [
+        str(item.get("id") or "")
+        for item in select_items(
+            load_gold(ROOT, "e2e"),
+            smoke=True,
+            smoke_n=min(cfg.e2e_suite.smoke_n, len(load_gold(ROOT, "e2e"))),
+        )
+    ]
+    assert planned != raw
+
+
+def test_console_saves_terminal_checkpoint_before_dropping_signals(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    import signal as signal_mod
+
+    from mai_bench2 import cli as cli_mod
+    from mai_bench2.checkpoint import save_checkpoint as real_save
+
+    cfg_path = tmp_path / "config.toml"
+    out_dir = tmp_path / "results"
+    cfg_path.write_text(
+        "\n".join(
+            [
+                "[planner]",
+                'base_url = "http://p/v1"',
+                'api_key = "SECRET_KEY"',
+                'model = "m"',
+                "[judge]",
+                'base_url = "http://j/v1"',
+                'api_key = "JUDGE_SECRET"',
+                'model = "judge-m"',
+                "[run]",
+                f'output_dir = "{out_dir}"',
+                f'cache_dir = "{tmp_path / "cache"}"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    previous_int = signal_mod.getsignal(signal_mod.SIGINT)
+    seen = {}
+
+    def tracking_save(directory, ckpt):
+        real_save(directory, ckpt)
+        if ckpt.state in {"complete", "incomplete"}:
+            seen["state"] = ckpt.state
+            seen["handler"] = signal_mod.getsignal(signal_mod.SIGINT)
+            data = json.loads((directory / "checkpoint.json").read_text(encoding="utf-8"))
+            seen["disk_state"] = data["state"]
+
+    def boom_narrative(*args, **kwargs):
+        seen["narrative_saw_save"] = "state" in seen
+        raise RuntimeError("narrative boom")
+
+    monkeypatch.setattr(cli_mod, "save_checkpoint", tracking_save)
+    monkeypatch.setattr(cli_mod, "generate_narrative", boom_narrative)
+    _patch_clients_and_suites(
+        monkeypatch,
+        planner=lambda *a, **k: SuiteResult(
+            "planner", "ok", {"action": 1.0}, 50.0, UsageSplit(), 1.0, 3
+        ),
+    )
+    with pytest.raises(RuntimeError, match="narrative boom"):
+        console(["--config", str(cfg_path), "planner", "--smoke"])
+    assert seen["narrative_saw_save"] is True
+    assert seen["state"] == "complete"
+    assert seen["disk_state"] == "complete"
+    assert seen["handler"] is not previous_int
+    assert seen["handler"] != signal_mod.SIG_DFL
