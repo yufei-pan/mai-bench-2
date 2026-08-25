@@ -46,8 +46,9 @@ def test_readme_covers_install_suites_gating_and_warnings():
     assert "not publishable" in lower or "smoke" in lower
     assert "training" in lower
     assert "maibot" in lower
-    assert "mai-bench" in text
-    assert "unpublished" in lower
+    assert "mai-bench-2" in text
+    assert "unpublished" not in lower
+    assert "mai-composite" not in lower
     assert "not a live" in lower or "not live" in lower
     assert "narrative.md" in lower
     assert "including tool JSON written" in text
