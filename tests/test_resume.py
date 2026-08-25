@@ -1,6 +1,7 @@
 from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
+import json
 
 import pytest
 
@@ -106,6 +107,32 @@ def _write_config(
         encoding="utf-8",
     )
     return cfg_path, out_dir
+
+
+def _write_legacy_incomplete(stamp_dir: Path) -> None:
+    stamp_dir.mkdir(parents=True, exist_ok=True)
+    (stamp_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "rubric_hash": "abc",
+                "persona_id": "official",
+                "persona_hex": "77be5c59f150",
+                "prompts_id": "official",
+                "prompts_hex": "bbbb",
+                "smoke": True,
+                "suite_flag": "planner",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (stamp_dir / "planner.json").write_text(
+        json.dumps({"predictions": []}),
+        encoding="utf-8",
+    )
+    (stamp_dir / "config.toml").write_text(
+        '[planner]\nmodel = "m"\nbase_url = "http://p/v1"\n',
+        encoding="utf-8",
+    )
 
 
 def test_gate_model_mismatch(tmp_path):
@@ -255,6 +282,35 @@ def test_resume_no_tty_empty_without_api_key_env(tmp_path, capsys, monkeypatch):
     assert exited.value.code == 1
     err = capsys.readouterr().err
     assert "no resumable runs" in err
+    assert "MISSING_RESUME_KEY" not in err
+
+
+def test_resume_legacy_stamp_without_api_key_env(tmp_path, capsys, monkeypatch):
+    monkeypatch.delenv("MISSING_RESUME_KEY", raising=False)
+    cfg_path, out_dir = _write_config(tmp_path, api_key="${MISSING_RESUME_KEY}")
+    stamp = "2026-08-20T000000Z"
+    _write_legacy_incomplete(out_dir / stamp)
+    with pytest.raises(SystemExit) as exited:
+        console(["resume", "--stamp", stamp, "--config", str(cfg_path)])
+    assert exited.value.code == 1
+    err = capsys.readouterr().err
+    assert "unknown stamp" not in err
+    assert "Missing environment variable: MISSING_RESUME_KEY" in err
+
+
+def test_resume_no_tty_lists_legacy_without_api_key_env(tmp_path, capsys, monkeypatch):
+    monkeypatch.delenv("MISSING_RESUME_KEY", raising=False)
+    cfg_path, out_dir = _write_config(tmp_path, api_key="${MISSING_RESUME_KEY}")
+    stamp = "2026-08-20T000000Z"
+    _write_legacy_incomplete(out_dir / stamp)
+    monkeypatch.setattr("sys.stdin", SimpleNamespace(isatty=lambda: False))
+    with pytest.raises(SystemExit) as exited:
+        console(["resume", "--config", str(cfg_path)])
+    assert exited.value.code == 1
+    err = capsys.readouterr().err
+    assert stamp in err
+    assert "no TTY" in err
+    assert "unknown stamp" not in err
     assert "MISSING_RESUME_KEY" not in err
 
 
