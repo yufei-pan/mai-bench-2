@@ -27,7 +27,7 @@ from mai_bench2.config import (
     requested_suites,
 )
 from mai_bench2.digest import build_digest, format_digest
-from mai_bench2.gold import gold_item_count, load_gold, select_items
+from mai_bench2.gold import gold_item_count
 from mai_bench2.headlines import compute_headlines
 from mai_bench2.metrics import rubric_hash
 from mai_bench2.narrative import generate_narrative
@@ -36,17 +36,12 @@ from mai_bench2.persona import load_persona
 from mai_bench2.progress import make_progress, planned_total
 from mai_bench2.prompts import load_prompts
 from mai_bench2.report import render_table, write_artifacts, write_redacted_config
-from mai_bench2.suites.e2e import _hydrate, run_e2e_suite
+from mai_bench2.resume import _resume_console, gold_ids_for
+from mai_bench2.suites.e2e import run_e2e_suite
 from mai_bench2.suites.planner import run_planner_suite
 from mai_bench2.suites.replyer import run_replyer_suite
 from mai_bench2.types import SuiteResult, TokenCounts, UsageSplit
 from mai_bench2.usage import subtract_counts
-
-_SUITE_ATTR = {
-    "planner": "planner_suite",
-    "replyer": "replyer_suite",
-    "e2e": "e2e_suite",
-}
 
 _SEAT_MESSAGES = {
     "planner": "planner requires planner seat",
@@ -177,23 +172,7 @@ def install_run_signals(control: RunControl, caught_signal: dict | None = None) 
 
 
 def _gold_ids_for_run(cfg: AppConfig, root: Path) -> dict[str, list[str]]:
-    gold_ids: dict[str, list[str]] = {}
-    for name in requested_suites(cfg):
-        try:
-            items = load_gold(root, name)
-            if name == "e2e":
-                items = _hydrate(items, root)
-        except ValueError:
-            gold_ids[name] = []
-            continue
-        suite = getattr(cfg, _SUITE_ATTR[name])
-        selected = select_items(
-            items,
-            smoke=cfg.run.smoke,
-            smoke_n=min(suite.smoke_n, len(items)),
-        )
-        gold_ids[name] = [str(item.get("id") or "") for item in selected]
-    return gold_ids
+    return gold_ids_for(root, cfg.run.smoke, cfg)
 
 
 def run_suites(
@@ -444,8 +423,7 @@ def _build_clients(cfg: AppConfig) -> dict[str, ChatClient]:
 def console(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     if getattr(args, "command", "run") == "resume":
-        print("resume not wired", file=sys.stderr)
-        sys.exit(2)
+        sys.exit(_resume_console(args))
     try:
         package_root = Path(__file__).resolve().parents[2]
         path = find_config(args.config)
