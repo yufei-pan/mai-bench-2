@@ -310,6 +310,11 @@ def _fmt_tokens(total: int) -> str:
     return str(total)
 
 
+def write_redacted_config(out_dir: Path, cfg) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "config.toml").write_text(_dump_config_toml(cfg), encoding="utf-8")
+
+
 def write_artifacts(
     out_dir: Path,
     *,

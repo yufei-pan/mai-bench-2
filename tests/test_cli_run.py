@@ -164,16 +164,55 @@ class _FakeClient:
         return ChatResult(_FakeClient.narrative_text, TokenCounts(), False, True, [])
 
 
+def _planner_run_toml(tmp_path: Path) -> tuple[Path, Path]:
+    cfg_path = tmp_path / "config.toml"
+    out_dir = tmp_path / "results"
+    cfg_path.write_text(
+        "\n".join(
+            [
+                "[planner]",
+                'base_url = "http://p/v1"',
+                'api_key = "SECRET_KEY"',
+                'model = "m"',
+                "[run]",
+                f'output_dir = "{out_dir}"',
+                f'cache_dir = "{tmp_path / "cache"}"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return cfg_path, out_dir
+
+
+def _complete_ok_rows(name: str, result, kwargs: dict) -> None:
+    ckpt = kwargs.get("checkpoint")
+    if ckpt is None or getattr(result, "status", None) != "ok":
+        return
+    for row in ckpt.items:
+        if row.suite == name and row.status == "pending":
+            row.status = "ok"
+            row.payload = {"action": "none"}
+
+
+def _wrap_suite_fake(name: str, fn):
+    def wrapped(*args, **kwargs):
+        result = fn(*args, **kwargs)
+        _complete_ok_rows(name, result, kwargs)
+        return result
+
+    return wrapped
+
+
 def _patch_clients_and_suites(monkeypatch, *, planner=None, replyer=None, e2e=None):
     _FakeClient.probed = []
     _FakeClient.chat_error = None
     monkeypatch.setattr("mai_bench2.cli.ChatClient", _FakeClient)
     if planner is not None:
-        monkeypatch.setattr("mai_bench2.cli.run_planner_suite", planner)
+        monkeypatch.setattr("mai_bench2.cli.run_planner_suite", _wrap_suite_fake("planner", planner))
     if replyer is not None:
-        monkeypatch.setattr("mai_bench2.cli.run_replyer_suite", replyer)
+        monkeypatch.setattr("mai_bench2.cli.run_replyer_suite", _wrap_suite_fake("replyer", replyer))
     if e2e is not None:
-        monkeypatch.setattr("mai_bench2.cli.run_e2e_suite", e2e)
+        monkeypatch.setattr("mai_bench2.cli.run_e2e_suite", _wrap_suite_fake("e2e", e2e))
 
 
 def test_run_suites_no_seats_exit_0():
@@ -558,3 +597,93 @@ def test_dead_judge_fails_the_replyer_suite_before_any_model_call(monkeypatch: p
     assert results[0].status == "error"
     assert results[0].error_message == "judge endpoint unreachable"
     assert "502" in results[0].error_detail
+
+
+def test_console_writes_checkpoint_before_suites(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys):
+    cfg_path, out_dir = _planner_run_toml(tmp_path)
+    seen = {}
+
+    def fake_planner(cfg, client, persona, **kwargs):
+        stamps = [path for path in Path(cfg.run.output_dir).expanduser().iterdir() if path.is_dir()]
+        assert stamps, "stamp directory must exist before run_planner_suite"
+        ckpt_path = stamps[0] / "checkpoint.json"
+        assert ckpt_path.is_file(), "checkpoint.json must exist before run_planner_suite"
+        seen["data"] = json.loads(ckpt_path.read_text(encoding="utf-8"))
+        assert seen["data"]["state"] == "running"
+        assert (stamps[0] / "config.toml").is_file()
+        return SuiteResult("planner", "ok", {"action": 1.0}, 50.0, UsageSplit(), 1.0, 3)
+
+    _patch_clients_and_suites(monkeypatch, planner=fake_planner)
+    with pytest.raises(SystemExit) as exited:
+        console(["--config", str(cfg_path), "planner", "--smoke"])
+    assert exited.value.code == 0
+    runs = [path for path in out_dir.iterdir() if path.is_dir()]
+    assert len(runs) == 1
+    assert (runs[0] / "checkpoint.json").is_file()
+    data = json.loads((runs[0] / "checkpoint.json").read_text(encoding="utf-8"))
+    assert data["state"] == "complete"
+    assert data["items"]
+    assert seen["data"]["state"] == "running"
+
+
+def test_console_transport_fail_exits_1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys):
+    cfg_path, out_dir = _planner_run_toml(tmp_path)
+
+    def fake_planner(cfg, client, persona, **kwargs):
+        ckpt = kwargs.get("checkpoint")
+        if ckpt is not None:
+            for row in ckpt.items:
+                if row.suite == "planner":
+                    row.status = "transport_fail"
+                    row.error = "RuntimeError: boom"
+        return SuiteResult("planner", "ok", {"action": 1.0}, 50.0, UsageSplit(), 1.0, 3)
+
+    _patch_clients_and_suites(monkeypatch, planner=fake_planner)
+    with pytest.raises(SystemExit) as exited:
+        console(["--config", str(cfg_path), "planner", "--smoke"])
+    assert exited.value.code == 1
+    runs = [path for path in out_dir.iterdir() if path.is_dir()]
+    assert len(runs) == 1
+    data = json.loads((runs[0] / "checkpoint.json").read_text(encoding="utf-8"))
+    assert data["state"] == "incomplete"
+    assert any(item["status"] == "transport_fail" for item in data["items"])
+    captured = capsys.readouterr()
+    assert "planner" in captured.out
+
+
+def test_install_run_signals_sigint_then_sigterm():
+    import signal as signal_mod
+
+    from mai_bench2.cli import install_run_signals
+    from mai_bench2.parallel import RunControl
+
+    previous_int = signal_mod.getsignal(signal_mod.SIGINT)
+    previous_term = signal_mod.getsignal(signal_mod.SIGTERM)
+    try:
+        control = RunControl()
+        caught = {"n": 0}
+        install_run_signals(control, caught)
+        sigint = signal_mod.getsignal(signal_mod.SIGINT)
+        sigint(signal_mod.SIGINT, None)
+        assert control.drain.is_set()
+        assert not control.abandon.is_set()
+        assert caught["n"] == 1
+        sigint(signal_mod.SIGINT, None)
+        assert control.abandon.is_set()
+        assert caught["n"] == 2
+        sigint(signal_mod.SIGINT, None)
+        assert caught["n"] == 2
+
+        term = RunControl()
+        term_caught = {"n": 0}
+        install_run_signals(term, term_caught)
+        signal_mod.getsignal(signal_mod.SIGTERM)(signal_mod.SIGTERM, None)
+        assert term.drain.is_set()
+        assert not term.abandon.is_set()
+        assert term_caught["n"] == 1
+        signal_mod.getsignal(signal_mod.SIGINT)(signal_mod.SIGINT, None)
+        assert term.abandon.is_set()
+        assert term_caught["n"] == 2
+    finally:
+        signal_mod.signal(signal_mod.SIGINT, previous_int)
+        signal_mod.signal(signal_mod.SIGTERM, previous_term)

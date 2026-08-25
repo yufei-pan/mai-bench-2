@@ -41,6 +41,7 @@ def run_replyer_suite(
     only_ids: set[str] | None = None,
     control: RunControl | None = None,
     on_item=None,
+    checkpoint=None,
 ) -> SuiteResult:
     if cfg.replyer is None:
         return SuiteResult(
