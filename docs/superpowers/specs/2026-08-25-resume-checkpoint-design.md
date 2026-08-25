@@ -1,7 +1,7 @@
 # mai-bench-2 Resume and Checkpoints
 
 **Date:** 2026-08-25  
-**Status:** Draft (brainstorming); awaiting spec review  
+**Status:** Approved (brainstorming)  
 **Author:** Yufei Pan / AI-assisted design  
 **Repo:** mai-bench-2
 
