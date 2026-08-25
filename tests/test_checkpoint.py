@@ -1,5 +1,6 @@
 from dataclasses import asdict
 from pathlib import Path
+import json
 
 import pytest
 
@@ -10,10 +11,14 @@ from mai_bench2.checkpoint import (
     SeatSnapshot,
     classify_item,
     is_complete,
+    list_resumable,
     load_checkpoint,
+    load_or_synthesize,
+    planned_items,
     retryable_items,
     save_checkpoint,
     seat_snapshot,
+    synthesize_legacy,
     update_item,
 )
 from mai_bench2.config import EndpointConfig
@@ -27,17 +32,17 @@ def _ckpt(**kwargs) -> Checkpoint:
         [ItemRecord("planner", "p-1", 0, "pending")],
     )
     return Checkpoint(
-        version=1,
-        stamp="2026-08-25T000000Z",
-        state="running",
-        smoke=False,
-        suite_flag=None,
-        rubric_hash="abc",
-        persona_id="official",
-        persona_hex="77be5c59f150",
-        prompts_id="official",
-        prompts_hex="bbbb",
-        gold_ids={"planner": ["p-1"]},
+        version=kwargs.pop("version", 1),
+        stamp=kwargs.pop("stamp", "2026-08-25T000000Z"),
+        state=kwargs.pop("state", "running"),
+        smoke=kwargs.pop("smoke", False),
+        suite_flag=kwargs.pop("suite_flag", None),
+        rubric_hash=kwargs.pop("rubric_hash", "abc"),
+        persona_id=kwargs.pop("persona_id", "official"),
+        persona_hex=kwargs.pop("persona_hex", "77be5c59f150"),
+        prompts_id=kwargs.pop("prompts_id", "official"),
+        prompts_hex=kwargs.pop("prompts_hex", "bbbb"),
+        gold_ids=kwargs.pop("gold_ids", {"planner": ["p-1"]}),
         seats=seats,
         items=items,
         **kwargs,
@@ -152,3 +157,149 @@ def test_seat_snapshot_copies_fields():
     assert snap.model == "mdl"
     assert snap.base_url == "http://u"
     assert snap.reasoning_effort == "high"
+
+
+def test_planned_items_repeats():
+    rows = planned_items({"planner": ["a", "b"]}, repeats=2)
+    keys = {(r.id, r.sample) for r in rows}
+    assert keys == {("a", 0), ("a", 1), ("b", 0), ("b", 1)}
+    assert all(r.status == "pending" for r in rows)
+
+
+def test_synthesize_legacy_missing_prediction(tmp_path: Path):
+    (tmp_path / "summary.json").write_text(
+        json.dumps(
+            {
+                "rubric_hash": "abc",
+                "persona_id": "official",
+                "persona_hex": "77be5c59f150",
+                "prompts_id": "official",
+                "prompts_hex": "bbbb",
+                "smoke": False,
+                "suite_flag": None,
+                "suites": [{"name": "planner", "predictions": [{"id": "keep"}]}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "planner.json").write_text(
+        json.dumps({"predictions": [{"id": "keep", "gold": "none", "pred": "none", "extra": {}}]}),
+        encoding="utf-8",
+    )
+    (tmp_path / "config.toml").write_text('[planner]\nmodel = "m"\nbase_url = "http://x"\n', encoding="utf-8")
+    ckpt = synthesize_legacy(tmp_path, {"planner": ["keep", "drop"]})
+    assert ckpt is not None
+    by_id = {row.id: row for row in ckpt.items}
+    assert by_id["keep"].status == "ok"
+    assert by_id["keep"].payload is None
+    assert by_id["drop"].status == "transport_fail"
+
+
+def test_synthesize_legacy_complete_returns_none(tmp_path: Path):
+    (tmp_path / "summary.json").write_text(json.dumps({"rubric_hash": "abc", "suites": []}), encoding="utf-8")
+    (tmp_path / "planner.json").write_text(
+        json.dumps({"predictions": [{"id": "a"}]}), encoding="utf-8"
+    )
+    assert synthesize_legacy(tmp_path, {"planner": ["a"]}) is None
+
+
+def test_list_resumable_skips_complete_and_sorts(tmp_path: Path):
+    old = tmp_path / "2026-08-24T000000Z"
+    new = tmp_path / "2026-08-25T000000Z"
+    old.mkdir()
+    new.mkdir()
+    save_checkpoint(old, _ckpt(stamp=old.name, state="incomplete"))
+    done = _ckpt(stamp=new.name, state="complete", items=[ItemRecord("planner", "p-1", 0, "ok", payload={})])
+    save_checkpoint(new, done)
+    listed = list_resumable(tmp_path, gold_ids={"planner": ["p-1"]})
+    assert [c.stamp for c in listed] == [old.name]
+
+
+def test_planned_items_clamps_repeats_and_sets_suite():
+    rows = planned_items({"planner": ["a"]}, repeats=0)
+    assert [(r.suite, r.id, r.sample, r.status) for r in rows] == [("planner", "a", 0, "pending")]
+
+
+def test_synthesize_legacy_missing_suite_file_is_transport_fail(tmp_path: Path):
+    (tmp_path / "summary.json").write_text(json.dumps({"rubric_hash": "abc"}), encoding="utf-8")
+    ckpt = synthesize_legacy(tmp_path, {"planner": ["a"]})
+    assert ckpt is not None
+    assert ckpt.items[0].status == "transport_fail"
+    assert ckpt.seats == {}
+    assert ckpt.stamp == tmp_path.name
+    assert ckpt.state == "incomplete"
+    assert ckpt.version == 1
+
+
+def test_synthesize_legacy_seats_from_config(tmp_path: Path):
+    (tmp_path / "summary.json").write_text(
+        json.dumps(
+            {
+                "rubric_hash": "abc",
+                "persona_id": "official",
+                "persona_hex": "77be5c59f150",
+                "prompts_id": "official",
+                "prompts_hex": "bbbb",
+                "smoke": False,
+                "suite_flag": None,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "planner.json").write_text(json.dumps({"predictions": []}), encoding="utf-8")
+    (tmp_path / "config.toml").write_text('[planner]\nmodel = "m"\nbase_url = "http://x"\n', encoding="utf-8")
+    ckpt = synthesize_legacy(tmp_path, {"planner": ["drop"]})
+    assert ckpt is not None
+    assert ckpt.seats["planner"].model == "m"
+    assert ckpt.seats["planner"].base_url == "http://x"
+    assert ckpt.persona_id == "official"
+    assert ckpt.gold_ids == {"planner": ["drop"]}
+
+
+def test_list_resumable_skips_corrupt_checkpoint(tmp_path: Path):
+    bad = tmp_path / "2026-08-24T000000Z"
+    good = tmp_path / "2026-08-25T000000Z"
+    bad.mkdir()
+    good.mkdir()
+    (bad / "checkpoint.json").write_text("{not json", encoding="utf-8")
+    save_checkpoint(good, _ckpt(stamp=good.name, state="incomplete"))
+    listed = list_resumable(tmp_path, gold_ids={"planner": ["p-1"]})
+    assert [c.stamp for c in listed] == [good.name]
+
+
+def test_list_resumable_skips_is_complete_even_if_running(tmp_path: Path):
+    d = tmp_path / "2026-08-25T000000Z"
+    d.mkdir()
+    save_checkpoint(
+        d,
+        _ckpt(stamp=d.name, state="running", items=[ItemRecord("planner", "p-1", 0, "ok", payload={})]),
+    )
+    listed = list_resumable(tmp_path, gold_ids={"planner": ["p-1"]})
+    assert listed == []
+
+
+def test_list_resumable_includes_legacy(tmp_path: Path):
+    stamp = tmp_path / "2026-08-20T000000Z"
+    stamp.mkdir()
+    (stamp / "summary.json").write_text(json.dumps({"rubric_hash": "abc"}), encoding="utf-8")
+    listed = list_resumable(tmp_path, gold_ids={"planner": ["a"]})
+    assert [c.stamp for c in listed] == [stamp.name]
+
+
+def test_load_or_synthesize_prefers_checkpoint(tmp_path: Path):
+    save_checkpoint(tmp_path, _ckpt())
+    loaded = load_or_synthesize(tmp_path, {"planner": ["other"]})
+    assert loaded.items[0].status == "pending"
+    assert loaded.stamp == "2026-08-25T000000Z"
+
+
+def test_load_or_synthesize_synthesizes_legacy(tmp_path: Path):
+    (tmp_path / "summary.json").write_text(json.dumps({"rubric_hash": "abc"}), encoding="utf-8")
+    loaded = load_or_synthesize(tmp_path, {"planner": ["a"]})
+    assert loaded.state == "incomplete"
+    assert loaded.items[0].status == "transport_fail"
+
+
+def test_load_or_synthesize_missing_raises(tmp_path: Path):
+    with pytest.raises(CheckpointError):
+        load_or_synthesize(tmp_path, {"planner": ["a"]})
