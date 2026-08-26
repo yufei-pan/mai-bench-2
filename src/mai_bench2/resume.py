@@ -16,7 +16,6 @@ from mai_bench2.checkpoint import (
     list_resumable,
     load_checkpoint,
     load_or_synthesize,
-    retryable_items,
     save_checkpoint,
 )
 from mai_bench2.config import (
@@ -281,7 +280,7 @@ def execute_resume(
     finished = False
     try:
         try:
-            retry_results, _suite_code = run_suites(
+            retry_results, suite_code = run_suites(
                 cfg,
                 root=root,
                 clients=clients,
@@ -293,12 +292,12 @@ def execute_resume(
             )
             ckpt = load_checkpoint(out_dir)
             results = _results_from_checkpoint(ckpt, cfg, root, retry_results)
-            if retryable_items(ckpt):
-                ckpt.state = "incomplete"
-                exit_code = 1
-            else:
+            if is_complete(ckpt):
                 ckpt.state = "complete"
-                exit_code = 0
+                exit_code = 0 if caught_signal["n"] else suite_code
+            else:
+                ckpt.state = "incomplete"
+                exit_code = 130 if caught_signal["n"] else 1
             save_checkpoint(out_dir, ckpt)
             finished = True
         except BaseException:
