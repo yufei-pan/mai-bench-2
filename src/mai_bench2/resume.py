@@ -32,15 +32,21 @@ from mai_bench2.metrics import rubric_hash
 from mai_bench2.parallel import RunControl
 from mai_bench2.persona import load_persona
 from mai_bench2.prompts import load_prompts
+from mai_bench2.report import grid
 from mai_bench2.suites.e2e import _hydrate, fold_e2e_from_records
 from mai_bench2.suites.planner import fold_planner_from_records
 from mai_bench2.suites.replyer import fold_replyer_from_records
 from mai_bench2.types import SuiteResult, UsageSplit
 
 _SEAT_FIELDS = ("model", "reasoning_effort", "temperature", "assistant_prefill")
+_PICKER_HEADER = ("#", "stamp", "mode", "planner", "replyer", "judge", "ok/pending/fail/aband")
 
 
 class ResumeError(Exception):
+    pass
+
+
+class ResumeCancelled(ResumeError):
     pass
 
 
@@ -215,6 +221,70 @@ def gate_resume(ckpt: Checkpoint, cfg: AppConfig, *, root: Path, package_root: P
     return warnings
 
 
+def _seat_label(ckpt: Checkpoint, role: str) -> str:
+    snap = ckpt.seats.get(role)
+    if snap is None:
+        return "-"
+    model = snap.model or "-"
+    if snap.reasoning_effort:
+        return f"{model} ({snap.reasoning_effort})"
+    return model
+
+
+def _status_counts(ckpt: Checkpoint) -> str:
+    ok = pending = fail = aband = 0
+    for row in ckpt.items:
+        if row.status == "ok":
+            ok += 1
+        elif row.status == "pending":
+            pending += 1
+        elif row.status == "transport_fail":
+            fail += 1
+        elif row.status == "abandoned":
+            aband += 1
+    return f"{ok}/{pending}/{fail}/{aband}"
+
+
+def _picker_lines(candidates: list[Checkpoint]) -> list[str]:
+    rows = [
+        (
+            str(i),
+            ckpt.stamp,
+            "smoke" if ckpt.smoke else "full",
+            _seat_label(ckpt, "planner"),
+            _seat_label(ckpt, "replyer"),
+            _seat_label(ckpt, "judge"),
+            _status_counts(ckpt),
+        )
+        for i, ckpt in enumerate(candidates, start=1)
+    ]
+    return grid(rows, _PICKER_HEADER)
+
+
+def pick_stamp(candidates: list[Checkpoint], *, stdin, stdout) -> str:
+    print("\n".join(_picker_lines(candidates)), file=stdout)
+    old_in, old_out = sys.stdin, sys.stdout
+    try:
+        sys.stdin, sys.stdout = stdin, stdout
+        try:
+            raw = input()
+        except EOFError as exc:
+            raise ResumeCancelled("cancelled") from exc
+        except KeyboardInterrupt as exc:
+            raise ResumeCancelled("cancelled") from exc
+    finally:
+        sys.stdin, sys.stdout = old_in, old_out
+    if not raw.strip():
+        raise ResumeCancelled("cancelled")
+    try:
+        index = int(raw.strip())
+    except ValueError as exc:
+        raise ResumeError(f"invalid selection: {raw.strip()}") from exc
+    if index < 1 or index > len(candidates):
+        raise ResumeError(f"invalid selection: {index}")
+    return candidates[index - 1].stamp
+
+
 def load_resume_target(
     output_dir: Path,
     stamp: str | None,
@@ -228,10 +298,11 @@ def load_resume_target(
     if stamp is None:
         candidates = list_resumable(output_dir, gold_ids=gold_ids)
         if not candidates:
-            raise ResumeError("no resumable runs")
-        for ckpt in candidates:
-            print(ckpt.stamp, file=stderr)
-        raise ResumeError("no TTY")
+            raise ResumeError(f"no resumable runs in {output_dir}")
+        if not tty:
+            print("\n".join(_picker_lines(candidates)), file=stderr)
+            raise ResumeError("specify --stamp")
+        stamp = pick_stamp(candidates, stdin=stdin, stdout=stdout)
     directory = Path(output_dir) / stamp
     if not directory.is_dir():
         raise ResumeError(f"unknown stamp: {stamp}")
@@ -436,6 +507,8 @@ def _resume_console(args) -> int:
             out_dir=output_dir / ckpt.stamp,
         )
     except ResumeError as exc:
+        if isinstance(exc, ResumeCancelled) or str(exc) == "cancelled":
+            return 130
         print(str(exc), file=sys.stderr)
         return 1
     except ConfigError as exc:

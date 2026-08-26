@@ -180,6 +180,13 @@ def test_readme_links_chinese_translation():
     assert "[简体中文](README.zh-CN.md)" in text
 
 
+def test_readme_documents_resume():
+    for rel in ("README.md", "README.zh-CN.md"):
+        text = (ROOT / rel).read_text(encoding="utf-8")
+        assert "mai-bench-2 resume" in text
+        assert "--stamp" in text
+
+
 def test_chinese_readme_mirrors_invariants():
     path = ROOT / "README.zh-CN.md"
     assert path.is_file()

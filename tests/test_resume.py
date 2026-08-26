@@ -23,10 +23,12 @@ from mai_bench2.persona import load_persona
 from mai_bench2.planner_loop import PlannerTrace
 from mai_bench2.prompts import load_prompts
 from mai_bench2.resume import (
+    ResumeCancelled,
     ResumeError,
     execute_resume,
     gate_resume,
     load_resume_target,
+    pick_stamp,
     resolve_output_dir,
 )
 from mai_bench2.types import SuiteResult, UsageSplit
@@ -320,7 +322,7 @@ def test_resume_no_tty_lists_legacy_without_api_key_env(tmp_path, capsys, monkey
     assert exited.value.code == 1
     err = capsys.readouterr().err
     assert stamp in err
-    assert "no TTY" in err
+    assert "specify --stamp" in err
     assert "unknown stamp" not in err
     assert "MISSING_RESUME_KEY" not in err
 
@@ -391,7 +393,7 @@ def test_resume_no_tty_lists_stamps(tmp_path, capsys, monkeypatch):
     assert exited.value.code == 1
     err = capsys.readouterr().err
     assert stamp in err
-    assert "no TTY" in err
+    assert "specify --stamp" in err
 
 
 def test_load_resume_target_unknown(tmp_path):
@@ -718,3 +720,146 @@ def test_execute_resume_complete_after_signal_exits_0(tmp_path, monkeypatch, cap
     assert code == 0
     loaded = load_checkpoint(stamp_dir)
     assert loaded.state == "complete"
+
+
+class _TtyStdin(StringIO):
+    def isatty(self):
+        return True
+
+
+def test_pick_stamp_reads_number():
+    ckpt = _ckpt_for(_planner_cfg(), stamp="2026-08-25T000000Z", state="incomplete")
+    chosen = pick_stamp([ckpt], stdin=StringIO("1\n"), stdout=StringIO())
+    assert chosen == "2026-08-25T000000Z"
+
+
+def test_pick_stamp_reads_second():
+    first = _ckpt_for(_planner_cfg(), stamp="2026-08-25T000002Z", state="incomplete")
+    second = _ckpt_for(_planner_cfg(), stamp="2026-08-25T000001Z", state="incomplete")
+    chosen = pick_stamp([first, second], stdin=StringIO("2\n"), stdout=StringIO())
+    assert chosen == "2026-08-25T000001Z"
+
+
+def test_pick_stamp_empty_cancels():
+    ckpt = _ckpt_for(_planner_cfg(), stamp="2026-08-25T000000Z", state="incomplete")
+    with pytest.raises(ResumeCancelled):
+        pick_stamp([ckpt], stdin=StringIO("\n"), stdout=StringIO())
+
+
+def test_pick_stamp_eof_cancels():
+    ckpt = _ckpt_for(_planner_cfg(), stamp="2026-08-25T000000Z", state="incomplete")
+    with pytest.raises(ResumeCancelled):
+        pick_stamp([ckpt], stdin=StringIO(""), stdout=StringIO())
+
+
+def test_pick_stamp_grid_columns():
+    ckpt = _ckpt_for(
+        _planner_cfg(),
+        stamp="2026-08-25T000000Z",
+        state="incomplete",
+        items=[
+            ItemRecord("planner", "p-1", 0, "ok", payload={}),
+            ItemRecord("planner", "p-2", 0, "pending"),
+            ItemRecord("planner", "p-3", 0, "transport_fail", error="x"),
+            ItemRecord("planner", "p-4", 0, "abandoned"),
+        ],
+    )
+    stdout = StringIO()
+    pick_stamp([ckpt], stdin=StringIO("1\n"), stdout=stdout)
+    text = stdout.getvalue()
+    for column in ("#", "stamp", "mode", "planner", "replyer", "judge", "ok/pending/fail/aband"):
+        assert column in text
+    assert "2026-08-25T000000Z" in text
+    assert "smoke" in text
+    assert "1/1/1/1" in text
+
+
+def test_pick_stamp_invalid_index():
+    ckpt = _ckpt_for(_planner_cfg(), stamp="2026-08-25T000000Z", state="incomplete")
+    with pytest.raises(ResumeError):
+        pick_stamp([ckpt], stdin=StringIO("0\n"), stdout=StringIO())
+    with pytest.raises(ResumeError):
+        pick_stamp([ckpt], stdin=StringIO("9\n"), stdout=StringIO())
+    with pytest.raises(ResumeError):
+        pick_stamp([ckpt], stdin=StringIO("nope\n"), stdout=StringIO())
+
+
+def test_no_tty_without_stamp_exits_1(tmp_path, monkeypatch, capsys):
+    cfg_path, out_dir = _write_config(tmp_path)
+    stamp = "2026-08-25T020000Z"
+    stamp_dir = out_dir / stamp
+    stamp_dir.mkdir()
+    save_checkpoint(
+        stamp_dir,
+        _ckpt_for(
+            _planner_cfg(),
+            stamp=stamp,
+            state="incomplete",
+            items=[ItemRecord("planner", "p-1", 0, "pending")],
+        ),
+    )
+    monkeypatch.setattr("sys.stdin", type("S", (), {"isatty": lambda self: False})())
+    with pytest.raises(SystemExit) as exited:
+        console(["resume", "--config", str(cfg_path)])
+    assert exited.value.code == 1
+    err = capsys.readouterr().err
+    assert stamp in err
+    assert "specify --stamp" in err
+    for column in ("#", "stamp", "mode", "planner", "replyer", "judge"):
+        assert column in err
+
+
+def test_resume_no_tty_empty_names_output_dir(tmp_path, capsys, monkeypatch):
+    cfg_path, out_dir = _write_config(tmp_path)
+    monkeypatch.setattr("sys.stdin", SimpleNamespace(isatty=lambda: False))
+    with pytest.raises(SystemExit) as exited:
+        console(["resume", "--config", str(cfg_path)])
+    assert exited.value.code == 1
+    err = capsys.readouterr().err
+    assert f"no resumable runs in {out_dir}" in err
+
+
+def test_load_resume_target_tty_picks_stamp(tmp_path):
+    cfg = _planner_cfg()
+    stamp = "2026-08-25T030000Z"
+    stamp_dir = tmp_path / stamp
+    stamp_dir.mkdir()
+    save_checkpoint(
+        stamp_dir,
+        _ckpt_for(cfg, stamp=stamp, state="incomplete", items=[ItemRecord("planner", "p-1", 0, "pending")]),
+    )
+    stdout = StringIO()
+    loaded = load_resume_target(
+        tmp_path,
+        None,
+        gold_ids=_gold_ids_for_run(cfg, ROOT),
+        tty=True,
+        stdin=StringIO("1\n"),
+        stdout=stdout,
+        stderr=StringIO(),
+    )
+    assert loaded.stamp == stamp
+    assert stamp in stdout.getvalue()
+
+
+def test_resume_picker_empty_exits_130(tmp_path, monkeypatch, capsys):
+    cfg_path, out_dir = _write_config(tmp_path)
+    stamp = "2026-08-25T040000Z"
+    stamp_dir = out_dir / stamp
+    stamp_dir.mkdir()
+    save_checkpoint(
+        stamp_dir,
+        _ckpt_for(
+            _planner_cfg(),
+            stamp=stamp,
+            state="incomplete",
+            items=[ItemRecord("planner", "p-1", 0, "pending")],
+        ),
+    )
+    monkeypatch.setattr("sys.stdin", _TtyStdin("\n"))
+    with pytest.raises(SystemExit) as exited:
+        console(["resume", "--config", str(cfg_path)])
+    assert exited.value.code == 130
+    loaded = load_checkpoint(stamp_dir)
+    assert loaded.state == "incomplete"
+    assert all(row.status == "pending" for row in loaded.items)
