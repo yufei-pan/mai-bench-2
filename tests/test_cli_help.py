@@ -10,6 +10,40 @@ def test_parse_defaults():
     assert ns.persona is None
     assert ns.no_cache is False
     assert ns.concurrency is None
+    assert ns.command == "run"
+
+
+def test_parse_compare_subcommand():
+    ns = parse_args(["compare"])
+    assert ns.command == "compare"
+    assert ns.group is None
+    assert ns.full is False
+    assert ns.smoke_flag is False
+    assert ns.config is None
+
+
+def test_parse_compare_full_and_group():
+    ns = parse_args(["compare", "--full", "--group", "abc123"])
+    assert ns.command == "compare"
+    assert ns.full is True
+    assert ns.smoke_flag is False
+    assert ns.group == "abc123"
+
+
+def test_parse_compare_smoke_and_full_are_mutually_exclusive():
+    with pytest.raises(SystemExit) as exited:
+        parse_args(["compare", "--smoke", "--full"])
+    assert exited.value.code == 2
+
+
+def test_compare_help(capsys):
+    with pytest.raises(SystemExit) as exited:
+        parse_args(["compare", "-h"])
+    assert exited.value.code == 0
+    out = capsys.readouterr().out
+    assert "--group" in out
+    assert "--smoke" in out
+    assert "--full" in out
 
 
 def test_parse_suite_and_full():
@@ -63,6 +97,7 @@ def _assert_argparse_help(out: str) -> None:
     assert "e2e" in out
     assert "resume" in out
     assert "{run,smoke,full}" not in out
+    assert "compare" in out
 
 
 def test_help_short_flag(capsys):

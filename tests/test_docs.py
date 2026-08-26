@@ -15,6 +15,7 @@ def test_readme_canary_and_cli():
     assert "./run.sh" in text
     assert "planner-v1" in text
     assert "GPL-3" in text or "GPL-3.0" in text
+    assert "mai-bench-2 compare" in text
 
 
 def test_example_config_has_three_seats():
@@ -66,6 +67,8 @@ def test_readme_covers_install_suites_gating_and_warnings():
     assert "40-80" in text or "40–80" in text
     assert "60-120" in text or "60–120" in text
     assert "assistant_prefill" in text
+    assert "mai-bench-2 compare" in text
+    assert "--group" in text
 
 
 def test_example_config_seats_env_smoke_and_temps():
@@ -200,6 +203,8 @@ def test_chinese_readme_mirrors_invariants():
     assert "mai-bench-2 planner" in text
     assert "mai-bench-2-smoke" in text
     assert "mai-bench-2-full" in text
+    assert "mai-bench-2 compare" in text
+    assert "--group" in text
     assert "--persona" in text
     assert "--full" in text
     assert "--concurrency" in text

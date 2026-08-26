@@ -20,6 +20,7 @@ from mai_bench2.checkpoint import (
     update_item,
 )
 from mai_bench2.client import ChatClient
+from mai_bench2.compare import CompareError, compare_runs, resolve_output_dir
 from mai_bench2.config import (
     AppConfig,
     ConfigError,
@@ -60,9 +61,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "resume":
         return _parse_resume_args(argv[1:])
+    if argv and argv[0] == "compare":
+        return _parse_compare_args(argv[1:])
+    return _parse_run_args(argv)
+
+
+def _parse_run_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="mai-bench-2",
-        epilog="resume  continue an incomplete run (mai-bench-2 resume -h)",
+        epilog=(
+            "resume   continue an incomplete run (mai-bench-2 resume -h); "
+            "compare  print comparison tables from previous runs (mai-bench-2 compare -h)"
+        ),
     )
     parser.add_argument(
         "suite",
@@ -119,6 +129,31 @@ def _parse_resume_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--config", default=None, help="Path to config.toml")
     args = parser.parse_args(argv)
     args.command = "resume"
+    return args
+
+
+def _parse_compare_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="mai-bench-2 compare")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--smoke",
+        action="store_true",
+        dest="smoke_flag",
+        help="Show smoke runs only",
+    )
+    mode.add_argument(
+        "--full",
+        action="store_true",
+        help="Show full runs only",
+    )
+    parser.add_argument(
+        "--group",
+        default=None,
+        help="Run stamp or rubric_hash prefix",
+    )
+    parser.add_argument("--config", default=None, help="Path to config.toml")
+    args = parser.parse_args(argv)
+    args.command = "compare"
     return args
 
 
@@ -462,6 +497,8 @@ def console(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     if getattr(args, "command", "run") == "resume":
         sys.exit(_resume_console(args))
+    if args.command == "compare":
+        sys.exit(_compare_console(args))
     try:
         package_root = Path(__file__).resolve().parents[2]
         path = find_config(args.config)
@@ -591,6 +628,21 @@ def _emit_report(
         narrative=body,
         digest=digest,
     )
+
+
+def _compare_console(args: argparse.Namespace) -> int:
+    try:
+        text = compare_runs(
+            resolve_output_dir(args.config),
+            smoke=bool(args.smoke_flag),
+            full=bool(args.full),
+            group=args.group,
+        )
+    except (CompareError, ConfigError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    print(text, end="" if text.endswith("\n") else "\n")
+    return 0
 
 
 def smoke_console() -> None:
