@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
+from mai_bench2.client import is_content_block
 from mai_bench2.maibot_shape import attention_block, deferred_reminder, stamp
 from mai_bench2.prompts import Prompts, default_prompts, fill
 from mai_bench2.render import render_entry
@@ -122,6 +123,13 @@ def run_planner_loop(
         native_tool_call_count += len(result.tool_calls)
         if result.text:
             assistant_chunks.append(result.text)
+        if is_content_block(result.text) and not result.tool_calls:
+            stop_reason = "blocked"
+            idle = CONTRACT_FAIL
+            if first_action is None:
+                first_action = idle
+            last_commit = idle
+            break
         if not result.tool_calls:
             stop_reason = "no_tool_call"
             if emoted:

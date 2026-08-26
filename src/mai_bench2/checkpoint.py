@@ -28,6 +28,7 @@ class SeatSnapshot:
     assistant_prefill: bool
     extra_body: dict
     base_url: str
+    request_style: str = "openai"
 
 
 @dataclass
@@ -190,6 +191,7 @@ def seat_snapshot(endpoint: EndpointConfig) -> SeatSnapshot:
         assistant_prefill=endpoint.assistant_prefill,
         extra_body=dict(endpoint.extra_body),
         base_url=endpoint.base_url,
+        request_style=endpoint.request_style or "openai",
     )
 
 
@@ -225,8 +227,16 @@ def _seats_from_config(directory: Path) -> dict[str, SeatSnapshot]:
             assistant_prefill=bool(section.get("assistant_prefill", False)),
             extra_body=dict(extra) if isinstance(extra, dict) else {},
             base_url=str(section["base_url"]) if "base_url" in section else "",
+            request_style=_style_from_section(section),
         )
     return seats
+
+
+def _style_from_section(section: dict) -> str:
+    raw = section.get("request_style")
+    if raw is None or str(raw).strip() == "":
+        return "openai"
+    return str(raw).strip().lower()
 
 
 def _prediction_ids(directory: Path, suite: str) -> set[str]:

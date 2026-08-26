@@ -1,4 +1,5 @@
 from copy import deepcopy
+import json
 
 from conftest import ROOT
 from mai_bench2.persona import load_persona
@@ -106,6 +107,21 @@ def test_mute_empty_text_is_contract_fail():
     client = SequenceClient([[]], texts=[""])
     trace = run_planner_loop(client, _persona(), ITEM)
     assert trace.action == CONTRACT_FAIL
+
+
+def test_gemini_prohibited_content_json_is_contract_fail():
+    body = json.dumps(
+        {
+            "error": {
+                "message": "Gemini blocked the request: PROHIBITED_CONTENT",
+                "code": 400,
+            }
+        }
+    )
+    client = SequenceClient([[]], texts=[body])
+    trace = run_planner_loop(client, _persona(), ITEM)
+    assert trace.action == CONTRACT_FAIL
+    assert trace.stop_reason == "blocked"
 
 
 def test_no_action_name_is_contract_fail():

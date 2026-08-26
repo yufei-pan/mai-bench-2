@@ -193,14 +193,29 @@ def install_run_signals(control: RunControl, caught_signal: dict | None = None) 
             return
         if control.drain.is_set():
             caught_signal["n"] = 2
+            print(
+                "Interrupted again; abandoning in-flight items...",
+                file=sys.stderr,
+                flush=True,
+            )
             control.request_abandon()
             return
         caught_signal["n"] = 1
+        print(
+            "Interrupted; finishing in-flight items...",
+            file=sys.stderr,
+            flush=True,
+        )
         control.request_drain()
 
     def on_sigterm(signum, frame):
         if not caught_signal.get("n"):
             caught_signal["n"] = 1
+            print(
+                "Interrupted; finishing in-flight items...",
+                file=sys.stderr,
+                flush=True,
+            )
         control.request_drain()
 
     signal.signal(signal.SIGINT, on_sigint)
@@ -568,6 +583,7 @@ def console(argv: list[str] | None = None) -> None:
             results=results,
             clients=clients,
             root=package_root,
+            narrative=not caught_signal["n"],
         )
         sys.exit(exit_code)
     except ConfigError as exc:
@@ -587,6 +603,7 @@ def _emit_report(
     results,
     clients,
     root: Path,
+    narrative: bool = True,
 ) -> None:
     gold_counts = {
         name: gold_item_count(root, name) for name in ("planner", "replyer", "e2e")
@@ -604,13 +621,13 @@ def _emit_report(
     body = format_digest(digest)
     skip_line = None
     judge = (clients or {}).get("judge")
-    if judge is not None:
-        narrative = generate_narrative(judge, digest)
-        if narrative.text:
-            text = narrative.text
+    if narrative and judge is not None:
+        narrative_result = generate_narrative(judge, digest)
+        if narrative_result.text:
+            text = narrative_result.text
             body = text if text.endswith("\n") else f"{text}\n"
-        elif narrative.error_message:
-            skip_line = f"narrative skipped: {narrative.error_message}"
+        elif narrative_result.error_message:
+            skip_line = f"narrative skipped: {narrative_result.error_message}"
     print(table, end="")
     if skip_line:
         print()

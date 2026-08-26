@@ -69,6 +69,8 @@ def test_readme_covers_install_suites_gating_and_warnings():
     assert "assistant_prefill" in text
     assert "mai-bench-2 compare" in text
     assert "--group" in text
+    assert "request_style" in text
+    assert "extra_body" in text
 
 
 def test_example_config_seats_env_smoke_and_temps():
@@ -85,6 +87,8 @@ def test_example_config_seats_env_smoke_and_temps():
     assert "concurrency = 1" in text
     assert "# http_limit = 2" in text
     assert "assistant_prefill = false" in text
+    assert "request_style" in text
+    assert "extra_body" in text
     lower = text.lower()
     assert "sotopia" not in lower
     assert "ambient" not in lower
@@ -113,6 +117,7 @@ def test_example_config_loads_with_env():
     assert cfg.judge.temperature == 0.0
     assert cfg.planner.http_limit is None
     assert cfg.planner.assistant_prefill is False
+    assert cfg.planner.request_style == "openai"
     assert cfg.replyer.http_limit is None
     assert cfg.judge.http_limit is None
     assert cfg.run.smoke is True
@@ -210,6 +215,8 @@ def test_chinese_readme_mirrors_invariants():
     assert "--concurrency" in text
     assert "assistant_prefill" in text
     assert "http_limit" in text
+    assert "request_style" in text
+    assert "extra_body" in text
     assert "77be5c59f150" in text
     assert "maisaka_chat" in text
     assert "maisaka_replyer" in text

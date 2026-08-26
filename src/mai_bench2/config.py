@@ -15,11 +15,15 @@ _ENDPOINT_KEYS = (
     "timeout_s",
     "temperature",
     "reasoning_effort",
+    "request_style",
     "extra_body",
     "max_tokens",
     "max_attempts",
     "http_limit",
     "assistant_prefill",
+)
+_REQUEST_STYLES = frozenset(
+    {"openai", "glm", "anthropic", "gemini", "openrouter", "none"}
 )
 _RUN_KEYS = (
     "smoke",
@@ -45,6 +49,7 @@ class EndpointConfig:
     timeout_s: float = 300.0
     temperature: float | None = 0.0  # None omits the field entirely
     reasoning_effort: str | None = None
+    request_style: str = "openai"
     extra_body: dict = field(default_factory=dict)
     max_tokens: int = 256000
     # Attempts per request, including the first. A router rotating exhausted
@@ -167,7 +172,17 @@ def _endpoint(raw: object) -> EndpointConfig | None:
         kwargs["http_limit"] = max(1, int(kwargs["http_limit"]))
     if "assistant_prefill" in kwargs:
         kwargs["assistant_prefill"] = bool(kwargs["assistant_prefill"])
+    if "request_style" in kwargs:
+        kwargs["request_style"] = _request_style(kwargs["request_style"])
     return EndpointConfig(**kwargs)
+
+
+def _request_style(raw: object) -> str:
+    style = str(raw).strip().lower()
+    if style not in _REQUEST_STYLES:
+        allowed = ", ".join(sorted(_REQUEST_STYLES))
+        raise ConfigError(f"request_style {raw!r} is not one of: {allowed}")
+    return style
 
 
 def _run(raw: object) -> RunConfig:

@@ -60,6 +60,17 @@ def test_save_load_roundtrip(tmp_path: Path):
     assert loaded.items[0].status == "pending"
 
 
+def test_load_checkpoint_missing_request_style_defaults_openai(tmp_path: Path):
+    seat = SeatSnapshot("m", "xhigh", 0.0, True, {}, "http://x")
+    save_checkpoint(tmp_path, _ckpt(seats={"planner": seat}))
+    path = tmp_path / "checkpoint.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["seats"]["planner"].pop("request_style", None)
+    path.write_text(json.dumps(data), encoding="utf-8")
+    loaded = load_checkpoint(tmp_path)
+    assert loaded.seats["planner"].request_style == "openai"
+
+
 def test_load_missing_is_corrupt(tmp_path: Path):
     with pytest.raises(CheckpointError, match="corrupt checkpoint"):
         load_checkpoint(tmp_path)
@@ -168,6 +179,11 @@ def test_seat_snapshot_copies_fields():
     assert snap.model == "mdl"
     assert snap.base_url == "http://u"
     assert snap.reasoning_effort == "high"
+    assert snap.request_style == "openai"
+    glm = seat_snapshot(
+        EndpointConfig("http://u", "SECRET", "mdl", reasoning_effort="xhigh", request_style="glm")
+    )
+    assert glm.request_style == "glm"
 
 
 def test_planned_items_repeats():
@@ -263,8 +279,21 @@ def test_synthesize_legacy_seats_from_config(tmp_path: Path):
     assert ckpt is not None
     assert ckpt.seats["planner"].model == "m"
     assert ckpt.seats["planner"].base_url == "http://x"
+    assert ckpt.seats["planner"].request_style == "openai"
     assert ckpt.persona_id == "official"
     assert ckpt.gold_ids == {"planner": ["drop"]}
+
+
+def test_synthesize_legacy_seats_request_style_from_config(tmp_path: Path):
+    (tmp_path / "summary.json").write_text(json.dumps({"rubric_hash": "abc"}), encoding="utf-8")
+    (tmp_path / "planner.json").write_text(json.dumps({"predictions": []}), encoding="utf-8")
+    (tmp_path / "config.toml").write_text(
+        '[planner]\nmodel = "m"\nbase_url = "http://x"\nrequest_style = "glm"\n',
+        encoding="utf-8",
+    )
+    ckpt = synthesize_legacy(tmp_path, {"planner": ["drop"]})
+    assert ckpt is not None
+    assert ckpt.seats["planner"].request_style == "glm"
 
 
 def test_list_resumable_skips_corrupt_checkpoint(tmp_path: Path):

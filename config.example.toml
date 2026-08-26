@@ -5,6 +5,12 @@ model = "planner-model"
 timeout_s = 300
 temperature = 0.0
 reasoning_effort = "max"
+# How reasoning_effort is applied on the OpenAI-compatible request.
+# openai (default) | glm | anthropic | gemini | openrouter | none
+request_style = "openai"
+# none sends only extra_body; other styles merge extra_body then write their thinking keys.
+# [planner.extra_body]
+# keep = 1
 max_tokens = 256000
 max_attempts = 5
 # Last reminder: false = user「你需要…」, true = assistant prefill「我需要…」
@@ -18,6 +24,7 @@ model = "replyer-model"
 timeout_s = 300
 temperature = 0.0
 reasoning_effort = "max"
+request_style = "openai"
 max_tokens = 256000
 max_attempts = 5
 # http_limit = 2
@@ -29,6 +36,7 @@ model = "gpt-5.6-sol"
 timeout_s = 300
 temperature = 0.0
 reasoning_effort = "max"
+request_style = "openai"
 max_attempts = 5
 # http_limit = 2
 

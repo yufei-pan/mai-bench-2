@@ -266,6 +266,17 @@ Optional `http_limit` on `[planner]` / `[replyer]` / `[judge]` caps in-flight HT
 on that seat (omitted means unlimited). Waiting for a slot is not a client timeout.
 Example: `[judge] http_limit = 2` with `--concurrency 7`.
 
+Per-seat `request_style` chooses how canonical `reasoning_effort` is applied on the
+OpenAI-compatible request. The effort string is still what tables, checkpoints, and
+resume record. Styles: `openai` (default; top-level `reasoning_effort`), `glm`
+(map to `low`/`high`/`max` and `extra_body.thinking.type = "enabled"`), `anthropic`
+(`extra_body.thinking` plus `output_config.effort`), `gemini`
+(`extra_body.extra_body.google.thinking_config.thinking_level`; required for
+Google's own OpenAI-compat endpoint), `openrouter` (`extra_body.reasoning.effort`),
+or `none` (do not send `reasoning_effort`; put the wire fields in `[seat.extra_body]`).
+GLM-5.3 is not auto-detected; set `request_style = "glm"`. User `extra_body` is
+copied first; the style then overwrites only its thinking/reasoning keys.
+
 On `[planner]`, `assistant_prefill = true` sends the last reminder as an assistant
 prefill (`我需要输出对麦麦发言的分析…`). The default `false` sends it as a user
 turn with `你需要…`. Chat history is one user `<message>` envelope per gold turn,

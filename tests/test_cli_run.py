@@ -651,7 +651,7 @@ def test_console_transport_fail_exits_1(tmp_path: Path, monkeypatch: pytest.Monk
     assert "planner" in captured.out
 
 
-def test_install_run_signals_sigint_then_sigterm():
+def test_install_run_signals_sigint_then_sigterm(capsys):
     import signal as signal_mod
 
     from mai_bench2.cli import install_run_signals
@@ -687,6 +687,9 @@ def test_install_run_signals_sigint_then_sigterm():
     finally:
         signal_mod.signal(signal_mod.SIGINT, previous_int)
         signal_mod.signal(signal_mod.SIGTERM, previous_term)
+    err = capsys.readouterr().err
+    assert err.count("Interrupted; finishing in-flight items...") == 2
+    assert err.count("Interrupted again; abandoning in-flight items...") == 2
 
 
 def test_gold_ids_for_run_e2e_smoke_matches_hydrated_select():
@@ -780,6 +783,56 @@ def test_console_saves_terminal_checkpoint_before_dropping_signals(
     assert seen["disk_state"] == "complete"
     assert seen["handler"] is not previous_int
     assert seen["handler"] != signal_mod.SIG_DFL
+
+
+def test_console_interrupt_skips_narrative(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys):
+    import signal as signal_mod
+
+    from mai_bench2 import cli as cli_mod
+
+    cfg_path = tmp_path / "config.toml"
+    out_dir = tmp_path / "results"
+    cfg_path.write_text(
+        "\n".join(
+            [
+                "[planner]",
+                'base_url = "http://p/v1"',
+                'api_key = "SECRET_KEY"',
+                'model = "m"',
+                "[judge]",
+                'base_url = "http://j/v1"',
+                'api_key = "JUDGE_SECRET"',
+                'model = "judge-m"',
+                "[run]",
+                f'output_dir = "{out_dir}"',
+                f'cache_dir = "{tmp_path / "cache"}"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    calls = []
+
+    def fake_planner(cfg, client, persona, **kwargs):
+        handler = signal_mod.getsignal(signal_mod.SIGINT)
+        handler(signal_mod.SIGINT, None)
+        return SuiteResult("planner", "error", {"failed_items": 1}, None, UsageSplit(), 0.0, 0)
+
+    def track_narrative(*_args, **_kwargs):
+        calls.append(1)
+        raise AssertionError("narrative should be skipped after interrupt")
+
+    monkeypatch.setattr(cli_mod, "generate_narrative", track_narrative)
+    _patch_clients_and_suites(monkeypatch, planner=fake_planner)
+    with pytest.raises(SystemExit) as exited:
+        console(["--config", str(cfg_path), "planner", "--smoke"])
+    assert exited.value.code == 130
+    assert calls == []
+    err = capsys.readouterr().err
+    assert "Interrupted; finishing in-flight items..." in err
+    runs = [path for path in out_dir.iterdir() if path.is_dir()]
+    assert len(runs) == 1
+    data = json.loads((runs[0] / "checkpoint.json").read_text(encoding="utf-8"))
+    assert data["state"] == "incomplete"
 
 
 def test_console_gold_plan_valueerror_does_not_stamp_complete(

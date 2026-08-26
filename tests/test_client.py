@@ -38,10 +38,11 @@ from mai_bench2.usage import add_counts, extract_usage
 
 
 class Boom(Exception):
-    def __init__(self, status_code=None, message=""):
+    def __init__(self, status_code=None, message="", body=None):
         super().__init__(message)
         self.status_code = status_code
         self.message = message
+        self.body = body
 
 
 def _tool_call(name, arguments, call_id="c1"):
@@ -240,6 +241,319 @@ def test_chat_none_max_tokens_uses_endpoint_probe_stays_1(tmp_path: Path):
     seen.clear()
     client.probe([{"role": "user", "content": "ping"}], max_tokens=1)
     assert seen[0]["max_tokens"] == 1
+
+
+def test_glm53_probe_maps_xhigh_to_max_and_enables_thinking(tmp_path: Path):
+    seen = []
+
+    def create_fn(**kwargs):
+        seen.append(kwargs)
+        return FakeResp()
+
+    extra = {"keep": 1}
+    client = ChatClient(
+        EndpointConfig(
+            "http://x/v1",
+            "k",
+            "z-ai/glm-5.3",
+            request_style="glm",
+            reasoning_effort="xhigh",
+            extra_body=extra,
+        ),
+        "planner",
+        tmp_path,
+        no_cache=True,
+        create_fn=create_fn,
+    )
+    client.probe([{"role": "user", "content": "ping"}])
+    req = seen[0]
+    assert req["reasoning_effort"] == "max"
+    assert req["extra_body"]["thinking"] == {"type": "enabled"}
+    assert req["extra_body"]["keep"] == 1
+    assert extra == {"keep": 1}
+
+
+@pytest.mark.parametrize(
+    "model,effort,expected",
+    [
+        ("z-ai/glm-5.3", "none", "low"),
+        ("z-ai/glm-5.3", "minimal", "low"),
+        ("cliproxyapi/glm-5.3", "medium", "high"),
+        ("GLM-5.3", "high", "high"),
+        ("foo/glm-5.3-preview", "xxhigh", "max"),
+        ("z-ai/glm-5.3", None, "max"),
+        ("z-ai/glm-5.3", "low", "low"),
+    ],
+)
+def test_glm53_maps_cursor_efforts(tmp_path: Path, model, effort, expected):
+    seen = []
+
+    def create_fn(**kwargs):
+        seen.append(kwargs)
+        return FakeResp()
+
+    client = ChatClient(
+        EndpointConfig("http://x/v1", "k", model, request_style="glm", reasoning_effort=effort),
+        "planner",
+        tmp_path,
+        no_cache=True,
+        create_fn=create_fn,
+    )
+    client.chat([{"role": "user", "content": "hi"}])
+    assert seen[0]["reasoning_effort"] == expected
+    assert seen[0]["extra_body"]["thinking"] == {"type": "enabled"}
+
+
+def test_glm53_overrides_disabled_thinking(tmp_path: Path):
+    seen = []
+
+    def create_fn(**kwargs):
+        seen.append(kwargs)
+        return FakeResp()
+
+    extra = {"thinking": {"type": "disabled"}}
+    client = ChatClient(
+        EndpointConfig(
+            "http://x/v1",
+            "k",
+            "z-ai/glm-5.3",
+            request_style="glm",
+            reasoning_effort="max",
+            extra_body=extra,
+        ),
+        "planner",
+        tmp_path,
+        no_cache=True,
+        create_fn=create_fn,
+    )
+    client.chat([{"role": "user", "content": "hi"}])
+    assert extra == {"thinking": {"type": "disabled"}}
+    assert seen[0]["extra_body"]["thinking"] == {"type": "enabled"}
+
+
+GEMINI_BLOCK_BODY = {
+    "error": {
+        "message": "Gemini blocked the request: PROHIBITED_CONTENT",
+        "code": 400,
+    }
+}
+
+
+def test_chat_200_error_object_without_choices_is_empty_not_raised(tmp_path: Path):
+    def create_fn(**kwargs):
+        return type("R", (), {"choices": None, "usage": None, "error": GEMINI_BLOCK_BODY["error"]})()
+
+    client = ChatClient(
+        EndpointConfig("http://x/v1", "k", "m"),
+        "planner",
+        tmp_path,
+        no_cache=True,
+        create_fn=create_fn,
+    )
+    result = client.chat([{"role": "user", "content": "hi"}])
+    assert result.text == ""
+    assert result.tool_calls == []
+
+
+def test_chat_200_prohibited_content_json_is_empty_not_raised(tmp_path: Path):
+    client = ChatClient(
+        EndpointConfig("http://x/v1", "k", "m"),
+        "planner",
+        tmp_path,
+        no_cache=True,
+        create_fn=lambda **kwargs: _resp(text=json.dumps(GEMINI_BLOCK_BODY)),
+    )
+    result = client.chat([{"role": "user", "content": "hi"}])
+    assert result.text == ""
+    assert result.tool_calls == []
+
+
+def test_chat_200_validation_error_body_is_empty_not_raised(tmp_path: Path):
+    def create_fn(**kwargs):
+        raise Boom(
+            status_code=200,
+            message="Data returned by API invalid for expected schema.",
+            body=GEMINI_BLOCK_BODY,
+        )
+
+    client = ChatClient(
+        EndpointConfig("http://x/v1", "k", "m"),
+        "planner",
+        tmp_path,
+        no_cache=True,
+        create_fn=create_fn,
+    )
+    result = client.chat([{"role": "user", "content": "hi"}])
+    assert result.text == ""
+    assert result.tool_calls == []
+
+
+def test_chat_plain_400_still_raises(tmp_path: Path):
+    def create_fn(**kwargs):
+        raise Boom(status_code=400, message="invalid_request_error")
+
+    client = ChatClient(
+        EndpointConfig("http://x/v1", "k", "m"),
+        "planner",
+        tmp_path,
+        no_cache=True,
+        create_fn=create_fn,
+    )
+    with pytest.raises(Boom):
+        client.chat([{"role": "user", "content": "hi"}])
+
+
+def test_non_glm_keeps_xhigh_and_does_not_inject_thinking(tmp_path: Path):
+    seen = []
+
+    def create_fn(**kwargs):
+        seen.append(kwargs)
+        return FakeResp()
+
+    client = ChatClient(
+        EndpointConfig(
+            "http://x/v1",
+            "k",
+            "openrouter/stealth/ox-alpha",
+            reasoning_effort="xhigh",
+        ),
+        "planner",
+        tmp_path,
+        no_cache=True,
+        create_fn=create_fn,
+    )
+    client.probe([{"role": "user", "content": "ping"}])
+    assert seen[0]["reasoning_effort"] == "xhigh"
+    assert "extra_body" not in seen[0]
+
+
+def _request(tmp_path: Path, **endpoint_kwargs) -> dict:
+    seen = []
+
+    def create_fn(**kwargs):
+        seen.append(kwargs)
+        return FakeResp()
+
+    client = ChatClient(
+        EndpointConfig("http://x/v1", "k", endpoint_kwargs.pop("model", "m"), **endpoint_kwargs),
+        "planner",
+        tmp_path,
+        no_cache=True,
+        create_fn=create_fn,
+    )
+    client.chat([{"role": "user", "content": "hi"}])
+    return seen[0]
+
+
+def test_glm_style_maps_xhigh_on_any_model_name(tmp_path: Path):
+    extra = {"keep": 1}
+    req = _request(
+        tmp_path,
+        model="not-a-glm",
+        request_style="glm",
+        reasoning_effort="xhigh",
+        extra_body=extra,
+    )
+    assert req["reasoning_effort"] == "max"
+    assert req["extra_body"]["thinking"] == {"type": "enabled"}
+    assert req["extra_body"]["keep"] == 1
+    assert extra == {"keep": 1}
+
+
+def test_glm53_model_without_glm_style_keeps_xhigh(tmp_path: Path):
+    req = _request(tmp_path, model="z-ai/glm-5.3", reasoning_effort="xhigh")
+    assert req["reasoning_effort"] == "xhigh"
+    assert "extra_body" not in req
+
+
+def test_none_style_omits_reasoning_effort_and_sends_extra_body(tmp_path: Path):
+    req = _request(
+        tmp_path,
+        request_style="none",
+        reasoning_effort="xhigh",
+        extra_body={"reasoning": {"effort": "high"}},
+    )
+    assert "reasoning_effort" not in req
+    assert req["extra_body"] == {"reasoning": {"effort": "high"}}
+
+
+def test_openrouter_style_puts_effort_in_reasoning_blob(tmp_path: Path):
+    req = _request(
+        tmp_path,
+        request_style="openrouter",
+        reasoning_effort="xhigh",
+        extra_body={"keep": 1},
+    )
+    assert "reasoning_effort" not in req
+    assert req["extra_body"]["reasoning"] == {"effort": "xhigh"}
+    assert req["extra_body"]["keep"] == 1
+
+
+def test_anthropic_style_sets_thinking_and_output_config_effort(tmp_path: Path):
+    extra = {"thinking": {"budget_tokens": 8000}, "keep": 1}
+    req = _request(
+        tmp_path,
+        request_style="anthropic",
+        reasoning_effort="xhigh",
+        extra_body=extra,
+    )
+    assert "reasoning_effort" not in req
+    assert req["extra_body"]["thinking"] == {"type": "enabled", "budget_tokens": 8000}
+    assert req["extra_body"]["output_config"] == {"effort": "max"}
+    assert req["extra_body"]["keep"] == 1
+    assert extra == {"thinking": {"budget_tokens": 8000}, "keep": 1}
+
+
+def test_anthropic_style_disables_thinking_when_effort_is_none(tmp_path: Path):
+    req = _request(tmp_path, request_style="anthropic", reasoning_effort="none")
+    assert "reasoning_effort" not in req
+    assert req["extra_body"]["thinking"] == {"type": "disabled"}
+    assert "output_config" not in req["extra_body"]
+
+
+def test_gemini_style_nests_thinking_level_under_google(tmp_path: Path):
+    extra = {"extra_body": {"google": {"thinking_config": {"include_thoughts": True}}}}
+    req = _request(
+        tmp_path,
+        request_style="gemini",
+        reasoning_effort="xhigh",
+        extra_body=extra,
+    )
+    assert "reasoning_effort" not in req
+    google = req["extra_body"]["extra_body"]["google"]
+    assert google["thinking_config"]["thinking_level"] == "high"
+    assert google["thinking_config"]["include_thoughts"] is True
+
+
+def test_openai_style_keeps_extra_body_untouched(tmp_path: Path):
+    extra = {"thinking": {"type": "disabled"}}
+    req = _request(
+        tmp_path,
+        request_style="openai",
+        reasoning_effort="xhigh",
+        extra_body=extra,
+    )
+    assert req["reasoning_effort"] == "xhigh"
+    assert req["extra_body"] == extra
+
+
+def test_cache_key_includes_request_style(tmp_path: Path):
+    messages = [{"role": "user", "content": "hi"}]
+    openai_client = ChatClient(
+        EndpointConfig("http://x/v1", "k", "m", reasoning_effort="xhigh", request_style="openai"),
+        "planner",
+        tmp_path,
+        no_cache=True,
+    )
+    glm_client = ChatClient(
+        EndpointConfig("http://x/v1", "k", "m", reasoning_effort="xhigh", request_style="glm"),
+        "planner",
+        tmp_path,
+        no_cache=True,
+    )
+    a = openai_client._cache_path(messages, max_tokens=8, temperature=0.0, tools=None)
+    b = glm_client._cache_path(messages, max_tokens=8, temperature=0.0, tools=None)
+    assert a != b
 
 
 def test_sdk_retries_are_disabled_so_ours_are_the_only_ones(monkeypatch):

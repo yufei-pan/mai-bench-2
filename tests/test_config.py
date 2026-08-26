@@ -96,3 +96,32 @@ def test_load_http_limit_negative_becomes_one(tmp_path: Path):
     path.write_text(_planner_toml(limit="http_limit = -3\n"), encoding="utf-8")
     cfg = load_config(path)
     assert cfg.planner.http_limit == 1
+
+
+def test_load_request_style_omitted_is_openai(tmp_path: Path):
+    path = tmp_path / "c.toml"
+    path.write_text(_planner_toml(), encoding="utf-8")
+    cfg = load_config(path)
+    assert cfg.planner is not None
+    assert cfg.planner.request_style == "openai"
+
+
+def test_load_request_style_glm(tmp_path: Path):
+    path = tmp_path / "c.toml"
+    path.write_text(_planner_toml(style='request_style = "glm"\n'), encoding="utf-8")
+    cfg = load_config(path)
+    assert cfg.planner.request_style == "glm"
+
+
+def test_load_request_style_is_case_insensitive(tmp_path: Path):
+    path = tmp_path / "c.toml"
+    path.write_text(_planner_toml(style='request_style = "OpenRouter"\n'), encoding="utf-8")
+    cfg = load_config(path)
+    assert cfg.planner.request_style == "openrouter"
+
+
+def test_load_request_style_unknown_errors(tmp_path: Path):
+    path = tmp_path / "c.toml"
+    path.write_text(_planner_toml(style='request_style = "claude"\n'), encoding="utf-8")
+    with pytest.raises(ConfigError, match="request_style"):
+        load_config(path)

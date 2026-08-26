@@ -45,6 +45,7 @@ def _planner_cfg(**kwargs) -> AppConfig:
         temperature=kwargs.pop("temperature", 0.0),
         assistant_prefill=kwargs.pop("assistant_prefill", False),
         extra_body=kwargs.pop("extra_body", {"z": 1, "a": 2}),
+        request_style=kwargs.pop("request_style", "openai"),
     )
     return AppConfig(
         endpoint,
@@ -226,6 +227,26 @@ def test_gate_extra_body_key_order_equal():
     )
     warnings = gate_resume(ckpt, live, root=ROOT, package_root=ROOT)
     assert warnings == []
+
+
+def test_gate_request_style_mismatch():
+    live = _planner_cfg(request_style="glm")
+    ckpt = _ckpt_for(
+        live,
+        seats={
+            "planner": SeatSnapshot(
+                "m",
+                "high",
+                0.0,
+                False,
+                {"z": 1, "a": 2},
+                "http://p/v1",
+                request_style="openai",
+            )
+        },
+    )
+    with pytest.raises(ResumeError, match="request_style"):
+        gate_resume(ckpt, live, root=ROOT, package_root=ROOT)
 
 
 def test_gate_missing_live_seat():
