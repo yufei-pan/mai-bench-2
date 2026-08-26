@@ -4,6 +4,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from mai_bench2.checkpoint import RETRYABLE
 from mai_bench2.config import AppConfig
 from mai_bench2.gold import item_theme, load_gold, select_items, validate_item
 from mai_bench2.judge import judge_reply
@@ -19,7 +20,7 @@ from mai_bench2.metrics import (
 )
 from mai_bench2.parallel import Abandoned, RunControl, map_items
 from mai_bench2.persona import Persona
-from mai_bench2.planner_loop import PlannerTrace, run_planner_loop
+from mai_bench2.planner_loop import PlannerTrace, planner_trace_from_payload, run_planner_loop
 from mai_bench2.prompts import Prompts
 from mai_bench2.suites.replyer import generate_reply
 from mai_bench2.types import Prediction, SuiteResult, TokenCounts, UsageSplit
@@ -206,6 +207,27 @@ def run_e2e_suite(
         control=control,
         on_item=on_item,
     )
+    return fold_e2e(
+        selected,
+        mapped,
+        usage=_usage(planner_client, replyer_client, judge_client),
+        wall_s=time.perf_counter() - started,
+    )
+
+
+def e2e_result_from_payload(payload: dict) -> _E2eOne:
+    data = dict(payload)
+    data["trace"] = planner_trace_from_payload(data.get("trace") or {})
+    return _E2eOne(**data)
+
+
+def fold_e2e(
+    selected: list[dict],
+    mapped: list,
+    *,
+    usage: UsageSplit,
+    wall_s: float,
+) -> SuiteResult:
     scored: list[tuple[dict, PlannerTrace]] = []
     joints: list[float] = []
     judge_rows: list[dict] = []
@@ -244,8 +266,6 @@ def run_e2e_suite(
         )
 
     n_selected = len(selected)
-    wall_s = time.perf_counter() - started
-    usage = _usage(planner_client, replyer_client, judge_client)
     if n_selected > 0 and failures == n_selected:
         return SuiteResult(
             name="e2e",
@@ -298,6 +318,39 @@ def run_e2e_suite(
         n_items=len(scored) - judge_unparsed - judge_transport,
         predictions=predictions,
     )
+
+
+def fold_e2e_from_records(
+    selected: list[dict],
+    records: list,
+    *,
+    usage: UsageSplit | None = None,
+    wall_s: float = 0.0,
+    sample: int = 0,
+) -> SuiteResult:
+    by_key = {
+        (row.id, row.sample): row for row in records if getattr(row, "suite", None) == "e2e"
+    }
+    mapped = []
+    for item in selected:
+        row = by_key.get((str(item.get("id") or ""), sample))
+        mapped.append(_e2e_from_record(row))
+    return fold_e2e(
+        selected,
+        mapped,
+        usage=usage if usage is not None else UsageSplit(),
+        wall_s=wall_s,
+    )
+
+
+def _e2e_from_record(row) -> _E2eOne | Exception | None:
+    if row is None:
+        return None
+    if row.status == "ok" and row.payload is not None:
+        return e2e_result_from_payload(row.payload)
+    if row.status in RETRYABLE:
+        return RuntimeError(row.error or row.status)
+    return None
 
 
 def _hydrate(items: list[dict], root: Path) -> list[dict]:
