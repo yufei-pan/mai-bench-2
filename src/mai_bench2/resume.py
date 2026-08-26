@@ -267,7 +267,7 @@ def pick_stamp(candidates: list[Checkpoint], *, stdin, stdout) -> str:
     try:
         sys.stdin, sys.stdout = stdin, stdout
         try:
-            raw = input()
+            raw = input("Resume which run? [#] (empty cancels): ")
         except EOFError as exc:
             raise ResumeCancelled("cancelled") from exc
         except KeyboardInterrupt as exc:

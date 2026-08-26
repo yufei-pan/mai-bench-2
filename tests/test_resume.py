@@ -776,6 +776,7 @@ def test_pick_stamp_grid_columns():
     assert "2026-08-25T000000Z" in text
     assert "smoke" in text
     assert "1/1/1/1" in text
+    assert "Resume which run? [#] (empty cancels):" in text
 
 
 def test_pick_stamp_invalid_index():
