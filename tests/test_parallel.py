@@ -157,6 +157,38 @@ def test_abandon_marks_in_flight():
     assert all(slot in {"a", "b", None} or isinstance(slot, Abandoned) for slot in out[:2])
 
 
+def test_abandon_returns_without_waiting_for_in_flight():
+    import time
+
+    hold = threading.Event()
+    started = threading.Barrier(3)
+    control = RunControl()
+
+    def fn(item):
+        started.wait(timeout=2)
+        hold.wait(timeout=5)
+        return item["id"]
+
+    def killer():
+        started.wait(timeout=2)
+        control.request_abandon()
+
+    threading.Thread(target=killer, daemon=True).start()
+    t0 = time.monotonic()
+    out = map_items(
+        fn,
+        [{"id": "a"}, {"id": "b"}],
+        concurrency=2,
+        progress=None,
+        suite="planner",
+        control=control,
+    )
+    elapsed = time.monotonic() - t0
+    hold.set()
+    assert elapsed < 1.0
+    assert all(isinstance(slot, Abandoned) or slot in {"a", "b"} for slot in out)
+
+
 def test_on_item_not_called_for_unstarted(tmp_path=None):
     seen = []
     control = RunControl()

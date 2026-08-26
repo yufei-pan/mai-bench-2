@@ -152,6 +152,11 @@ def test_retryable_and_complete():
     assert is_complete(ckpt) is True
 
 
+def test_is_complete_empty_items_is_false():
+    # Production change that would fail this: `all([])` counting as complete.
+    assert is_complete(_ckpt(items=[])) is False
+
+
 def test_update_item_writes_payload():
     ckpt = _ckpt()
     update_item(ckpt, suite="planner", id="p-1", sample=0, status="ok", payload={"action": "none"}, error=None)
@@ -290,6 +295,35 @@ def test_list_resumable_includes_legacy(tmp_path: Path):
     (stamp / "summary.json").write_text(json.dumps({"rubric_hash": "abc"}), encoding="utf-8")
     listed = list_resumable(tmp_path, gold_ids={"planner": ["a"]})
     assert [c.stamp for c in listed] == [stamp.name]
+
+
+def test_list_resumable_synthesizes_each_legacy_folder_with_its_gold_ids(tmp_path: Path):
+    # Production change that would fail this: one live gold-id map applied to
+    # every legacy folder, so a stamp-complete folder looks full of holes.
+    complete = tmp_path / "2026-08-20T000000Z"
+    hole = tmp_path / "2026-08-21T000000Z"
+    for directory in (complete, hole):
+        directory.mkdir()
+        (directory / "summary.json").write_text(
+            json.dumps({"rubric_hash": "abc", "smoke": True, "suite_flag": "planner"}),
+            encoding="utf-8",
+        )
+        (directory / "planner.json").write_text(
+            json.dumps({"predictions": [{"id": "keep"}]}),
+            encoding="utf-8",
+        )
+
+    def gold_ids_for_dir(directory: Path) -> dict[str, list[str]]:
+        if directory.name == complete.name:
+            return {"planner": ["keep"]}
+        return {"planner": ["keep", "drop"]}
+
+    listed = list_resumable(
+        tmp_path,
+        gold_ids={"planner": ["keep", "drop"]},
+        gold_ids_for_dir=gold_ids_for_dir,
+    )
+    assert [ckpt.stamp for ckpt in listed] == [hole.name]
 
 
 def test_load_or_synthesize_prefers_checkpoint(tmp_path: Path):

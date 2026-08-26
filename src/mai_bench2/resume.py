@@ -294,9 +294,12 @@ def load_resume_target(
     stdin,
     stdout,
     stderr,
+    gold_ids_for_dir=None,
 ) -> Checkpoint:
     if stamp is None:
-        candidates = list_resumable(output_dir, gold_ids=gold_ids)
+        candidates = list_resumable(
+            output_dir, gold_ids=gold_ids, gold_ids_for_dir=gold_ids_for_dir
+        )
         if not candidates:
             raise ResumeError(f"no resumable runs in {output_dir}")
         if not tty:
@@ -306,8 +309,9 @@ def load_resume_target(
     directory = Path(output_dir) / stamp
     if not directory.is_dir():
         raise ResumeError(f"unknown stamp: {stamp}")
+    ids = gold_ids_for_dir(directory) if gold_ids_for_dir is not None else gold_ids
     try:
-        return load_or_synthesize(directory, gold_ids)
+        return load_or_synthesize(directory, ids)
     except CheckpointError as exc:
         if not (directory / "checkpoint.json").exists():
             raise ResumeError(f"unknown stamp: {stamp}") from exc
@@ -400,7 +404,9 @@ def _restrict_cfg(cfg, ckpt) -> None:
     cfg.run.smoke = ckpt.smoke
     cfg.suite_flag = ckpt.suite_flag
     if ckpt.items:
-        cfg.run.repeats = max(int(cfg.run.repeats), max(row.sample for row in ckpt.items) + 1)
+        cfg.run.repeats = max(row.sample for row in ckpt.items) + 1
+    else:
+        cfg.run.repeats = 1
     if cfg.suite_flag is None:
         wanted = set(ckpt.gold_ids)
         cfg.planner_suite = replace(cfg.planner_suite, enabled="planner" in wanted)
@@ -408,10 +414,23 @@ def _restrict_cfg(cfg, ckpt) -> None:
         cfg.e2e_suite = replace(cfg.e2e_suite, enabled="e2e" in wanted)
 
 
+def _stderr(samples: list[float]) -> float | None:
+    if len(samples) < 2:
+        return None
+    mean = sum(samples) / len(samples)
+    variance = sum((value - mean) ** 2 for value in samples) / (len(samples) - 1)
+    return (variance / len(samples)) ** 0.5
+
+
 def _results_from_checkpoint(ckpt, cfg, root: Path, retry_results: list) -> list[SuiteResult]:
     usage_by_name = {result.name: result.usage for result in retry_results}
     wall_by_name = {result.name: result.wall_s for result in retry_results}
     names = [name for name in ("planner", "replyer", "e2e") if name in ckpt.gold_ids]
+    folders = {
+        "planner": fold_planner_from_records,
+        "replyer": fold_replyer_from_records,
+        "e2e": fold_e2e_from_records,
+    }
     folded: list[SuiteResult] = []
     for name in names:
         usage = usage_by_name.get(name, UsageSplit())
@@ -440,18 +459,30 @@ def _results_from_checkpoint(ckpt, cfg, root: Path, retry_results: list) -> list
             smoke=cfg.run.smoke,
             smoke_n=min(suite_cfg.smoke_n, len(items)),
         )
-        if name == "planner":
-            folded.append(
-                fold_planner_from_records(selected, ckpt.items, usage=usage, wall_s=wall_s)
+        suite_rows = [row for row in ckpt.items if row.suite == name]
+        repeats = (max(row.sample for row in suite_rows) + 1) if suite_rows else 1
+        last = None
+        published = None
+        samples: list[float] = []
+        for sample in range(repeats):
+            if not any(row.sample == sample for row in suite_rows):
+                continue
+            last = folders[name](
+                selected, ckpt.items, usage=usage, wall_s=wall_s, sample=sample
             )
-        elif name == "replyer":
-            folded.append(
-                fold_replyer_from_records(selected, ckpt.items, usage=usage, wall_s=wall_s)
-            )
-        else:
-            folded.append(
-                fold_e2e_from_records(selected, ckpt.items, usage=usage, wall_s=wall_s)
-            )
+            if last.subscore is not None:
+                samples.append(float(last.subscore))
+            if any(row.sample == sample and row.status == "ok" for row in suite_rows):
+                published = last
+        result = published if published is not None else last
+        if result is None:
+            continue
+        result.repeats = repeats
+        result.subscore_samples = samples
+        if samples:
+            result.subscore = sum(samples) / len(samples)
+            result.subscore_stderr = _stderr(samples)
+        folded.append(result)
     return folded
 
 
@@ -466,26 +497,47 @@ def _gold_ids_for_stamp(directory: Path, root: Path, config_path: Path | None) -
     return gold_ids_for(root, smoke, cfg)
 
 
+def _reemit_complete(ckpt, cfg, *, root: Path, out_dir: Path) -> int:
+    _restrict_cfg(cfg, ckpt)
+    persona = load_persona(ckpt.persona_id, root=root)
+    prompts = load_prompts(ckpt.prompts_id, root=root)
+    results = _results_from_checkpoint(ckpt, cfg, root, [])
+    from mai_bench2.cli import _emit_report
+
+    _emit_report(
+        out_dir,
+        cfg=cfg,
+        persona=persona,
+        prompts=prompts,
+        results=results,
+        clients={},
+        root=root,
+    )
+    return 0
+
+
 def _resume_console(args) -> int:
     package_root = Path(__file__).resolve().parents[2]
     try:
         output_dir = resolve_output_dir(args.config)
         config_path = _config_path(args.config)
-        if args.stamp:
-            gold_ids = _gold_ids_for_stamp(output_dir / args.stamp, package_root, config_path)
-        else:
-            cfg_gold = _cfg_for_gold_ids(config_path)
-            gold_ids = gold_ids_for(package_root, cfg_gold.run.smoke, cfg_gold)
+
+        def gold_ids_for_dir(directory: Path) -> dict[str, list[str]]:
+            return _gold_ids_for_stamp(directory, package_root, config_path)
+
+        gold_ids = gold_ids_for_dir(output_dir / args.stamp) if args.stamp else {}
         ckpt = load_resume_target(
             output_dir,
             args.stamp,
             gold_ids=gold_ids,
+            gold_ids_for_dir=gold_ids_for_dir,
             tty=sys.stdin.isatty(),
             stdin=sys.stdin,
             stdout=sys.stdout,
             stderr=sys.stderr,
         )
-        if is_complete(ckpt):
+        stamp_dir = output_dir / ckpt.stamp
+        if is_complete(ckpt) and (stamp_dir / "summary.json").is_file():
             print(f"already complete: {ckpt.stamp}")
             return 0
         if ckpt.state == "running":
@@ -500,11 +552,13 @@ def _resume_console(args) -> int:
         warnings = gate_resume(ckpt, cfg, root=package_root, package_root=package_root)
         for line in warnings:
             print(line, file=sys.stderr)
+        if is_complete(ckpt):
+            return _reemit_complete(ckpt, cfg, root=package_root, out_dir=stamp_dir)
         return execute_resume(
             ckpt,
             cfg,
             root=package_root,
-            out_dir=output_dir / ckpt.stamp,
+            out_dir=stamp_dir,
         )
     except ResumeError as exc:
         if isinstance(exc, ResumeCancelled) or str(exc) == "cancelled":

@@ -25,8 +25,10 @@ from mai_bench2.prompts import load_prompts
 from mai_bench2.resume import (
     ResumeCancelled,
     ResumeError,
+    _restrict_cfg,
     execute_resume,
     gate_resume,
+    gold_ids_for,
     load_resume_target,
     pick_stamp,
     resolve_output_dir,
@@ -269,6 +271,7 @@ def test_resume_already_complete_without_api_key_env(tmp_path, capsys, monkeypat
             items=[ItemRecord("planner", "p-1", 0, "ok", payload={})],
         ),
     )
+    (stamp_dir / "summary.json").write_text(json.dumps({"suites": []}), encoding="utf-8")
     with pytest.raises(SystemExit) as exited:
         console(["resume", "--stamp", stamp, "--config", str(cfg_path)])
     assert exited.value.code == 0
@@ -339,6 +342,7 @@ def test_resume_already_complete(tmp_path, capsys):
         items=[ItemRecord("planner", "p-1", 0, "ok", payload={})],
     )
     save_checkpoint(stamp_dir, ckpt)
+    (stamp_dir / "summary.json").write_text(json.dumps({"suites": []}), encoding="utf-8")
     with pytest.raises(SystemExit) as exited:
         console(["resume", "--stamp", stamp, "--config", str(cfg_path)])
     assert exited.value.code == 0
@@ -863,3 +867,280 @@ def test_resume_picker_empty_exits_130(tmp_path, monkeypatch, capsys):
     loaded = load_checkpoint(stamp_dir)
     assert loaded.state == "incomplete"
     assert all(row.status == "pending" for row in loaded.items)
+
+
+def _write_all_seats_config(tmp_path: Path, *, api_key: str = "SECRET_KEY") -> tuple[Path, Path]:
+    out_dir = tmp_path / "results"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text(
+        "\n".join(
+            [
+                "[planner]",
+                'base_url = "http://p/v1"',
+                f'api_key = "{api_key}"',
+                'model = "m"',
+                "[replyer]",
+                'base_url = "http://r/v1"',
+                f'api_key = "{api_key}"',
+                'model = "m"',
+                "[judge]",
+                'base_url = "http://j/v1"',
+                f'api_key = "{api_key}"',
+                'model = "m"',
+                "[run]",
+                f'output_dir = "{out_dir}"',
+                f'cache_dir = "{tmp_path / "cache"}"',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return cfg_path, out_dir
+
+
+def _legacy_predictions(stamp_dir: Path, ids: list[str], *, smoke: bool, suite_flag: str | None) -> None:
+    stamp_dir.mkdir(parents=True, exist_ok=True)
+    (stamp_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "rubric_hash": "abc",
+                "persona_id": "official",
+                "persona_hex": "77be5c59f150",
+                "prompts_id": "official",
+                "prompts_hex": "bbbb",
+                "smoke": smoke,
+                "suite_flag": suite_flag,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (stamp_dir / "planner.json").write_text(
+        json.dumps({"predictions": [{"id": ident} for ident in ids]}),
+        encoding="utf-8",
+    )
+    (stamp_dir / "config.toml").write_text(
+        '[planner]\nmodel = "m"\nbase_url = "http://p/v1"\n',
+        encoding="utf-8",
+    )
+
+
+def test_resume_no_tty_skips_smoke_complete_legacy(tmp_path, capsys, monkeypatch):
+    # Live listing gold is full (config omits run.smoke). Spec 2.3: a smoke-complete
+    # stamp must not be listed just because full gold has more ids.
+    cfg_path, out_dir = _write_config(tmp_path)
+    stamp = "2026-08-20T110000Z"
+    smoke_ids = gold_ids_for(ROOT, True, _planner_cfg())
+    assert smoke_ids["planner"]
+    full_ids = gold_ids_for(ROOT, False, _planner_cfg())
+    assert len(full_ids["planner"]) > len(smoke_ids["planner"])
+    _legacy_predictions(out_dir / stamp, smoke_ids["planner"], smoke=True, suite_flag="planner")
+    monkeypatch.setattr("sys.stdin", SimpleNamespace(isatty=lambda: False))
+    with pytest.raises(SystemExit) as exited:
+        console(["resume", "--config", str(cfg_path)])
+    assert exited.value.code == 1
+    err = capsys.readouterr().err
+    assert stamp not in err
+    assert "no resumable runs" in err
+
+
+def test_resume_no_tty_lists_smoke_incomplete_legacy(tmp_path, capsys, monkeypatch):
+    cfg_path, out_dir = _write_config(tmp_path)
+    stamp = "2026-08-20T120000Z"
+    smoke_ids = gold_ids_for(ROOT, True, _planner_cfg())["planner"]
+    _legacy_predictions(out_dir / stamp, smoke_ids[:-1], smoke=True, suite_flag="planner")
+    monkeypatch.setattr("sys.stdin", SimpleNamespace(isatty=lambda: False))
+    with pytest.raises(SystemExit) as exited:
+        console(["resume", "--config", str(cfg_path)])
+    assert exited.value.code == 1
+    err = capsys.readouterr().err
+    assert stamp in err
+    assert "specify --stamp" in err
+
+
+def test_resume_no_tty_skips_planner_only_complete_legacy(tmp_path, capsys, monkeypatch):
+    # Live config has all three seats so listing gold includes replyer/e2e. A
+    # planner-only-complete stamp must not be listed for those missing suites.
+    cfg_path, out_dir = _write_all_seats_config(tmp_path)
+    stamp = "2026-08-20T130000Z"
+    planner_cfg = _planner_cfg()
+    planner_cfg.run.smoke = False
+    planner_ids = gold_ids_for(ROOT, False, planner_cfg)["planner"]
+    _legacy_predictions(out_dir / stamp, planner_ids, smoke=False, suite_flag="planner")
+    monkeypatch.setattr("sys.stdin", SimpleNamespace(isatty=lambda: False))
+    with pytest.raises(SystemExit) as exited:
+        console(["resume", "--config", str(cfg_path)])
+    assert exited.value.code == 1
+    err = capsys.readouterr().err
+    assert stamp not in err
+    assert "no resumable runs" in err
+
+
+def test_resume_complete_without_summary_reemits_artifacts(tmp_path, capsys):
+    # Production change that would fail this: printing already complete + exit 0
+    # when checkpoint items are ok but summary.json was never written.
+    cfg_path, out_dir = _write_config(tmp_path)
+    stamp = "2026-08-25T090000Z"
+    stamp_dir = out_dir / stamp
+    stamp_dir.mkdir()
+    cfg = _planner_cfg()
+    gold_ids = _gold_ids_for_run(cfg, ROOT)
+    idle = _idle_trace()
+    items = [
+        ItemRecord("planner", ident, 0, "ok", payload=asdict(idle))
+        for ident in gold_ids["planner"]
+    ]
+    save_checkpoint(
+        stamp_dir,
+        _ckpt_for(
+            cfg,
+            stamp=stamp,
+            state="complete",
+            gold_ids=gold_ids,
+            items=items,
+            seats={
+                "planner": SeatSnapshot("m", "high", 0.0, False, {}, "http://p/v1"),
+            },
+        ),
+    )
+    assert not (stamp_dir / "summary.json").is_file()
+    with pytest.raises(SystemExit) as exited:
+        console(["resume", "--stamp", stamp, "--config", str(cfg_path)])
+    assert exited.value.code == 0
+    captured = capsys.readouterr()
+    assert "already complete" not in captured.out
+    summary = json.loads((stamp_dir / "summary.json").read_text(encoding="utf-8"))
+    assert summary["suites"][0]["n_items"] == len(gold_ids["planner"])
+
+
+def test_restrict_cfg_does_not_invent_repeats():
+    cfg = _planner_cfg()
+    cfg.run.repeats = 9
+    ckpt = _ckpt_for(
+        cfg,
+        items=[
+            ItemRecord("planner", "p-1", 0, "ok", payload={}),
+            ItemRecord("planner", "p-1", 1, "pending"),
+        ],
+    )
+    _restrict_cfg(cfg, ckpt)
+    assert cfg.run.repeats == 2
+
+
+def test_cold_resume_does_not_start_unplanned_samples(tmp_path, monkeypatch, capsys):
+    # Live repeats=4 plus cold only_ids=None used to call update_item for sample 1
+    # which the checkpoint never planned.
+    _write_planner_gold(tmp_path, ("p-keep", "p-drop"))
+    cfg = _planner_cfg()
+    cfg.run.repeats = 4
+    stamp = "2026-08-25T090100Z"
+    stamp_dir = tmp_path / "results" / stamp
+    stamp_dir.mkdir(parents=True)
+    save_checkpoint(
+        stamp_dir,
+        _ckpt_for(
+            cfg,
+            stamp=stamp,
+            state="incomplete",
+            gold_ids={"planner": ["p-keep", "p-drop"]},
+            items=[
+                ItemRecord("planner", "p-keep", 0, "ok", payload=None),
+                ItemRecord("planner", "p-drop", 0, "transport_fail", error="RuntimeError: down"),
+            ],
+        ),
+    )
+    calls: list = []
+
+    def fake_planner(cfg, client, persona, *, only_ids=None, on_item=None, **k):
+        calls.append(only_ids)
+        return SuiteResult("planner", "ok", {}, 1.0, UsageSplit(), 0.0, 2)
+
+    monkeypatch.setattr("mai_bench2.cli.run_planner_suite", fake_planner)
+    monkeypatch.setattr("mai_bench2.suites.planner.run_planner_suite", fake_planner)
+
+    persona, prompts, _rh = _official()
+    execute_resume(
+        load_checkpoint(stamp_dir),
+        cfg,
+        root=tmp_path,
+        out_dir=stamp_dir,
+        clients={"planner": SimpleNamespace()},
+        persona=persona,
+        prompts=prompts,
+    )
+    assert calls == [None]
+    assert {(row.id, row.sample) for row in load_checkpoint(stamp_dir).items} == {
+        ("p-keep", 0),
+        ("p-drop", 0),
+    }
+
+
+def _reply_trace() -> PlannerTrace:
+    return PlannerTrace(
+        action="reply",
+        tools_called=["reply"],
+        wait_seconds=None,
+        reply_args={"msg_id": "m1"},
+        handoff_messages=[],
+        tool_reference_text="",
+        step_count=1,
+        assistant_text="ok",
+        final_action="reply",
+        replied=True,
+    )
+
+
+def test_resume_fold_each_sample_mean_and_last_native(tmp_path, monkeypatch, capsys):
+    # Production change that would fail this: folding sample 0 only, dropping
+    # mean/stderr and publishing sample-0 native/predictions.
+    _write_planner_gold(tmp_path, ("p-1",))
+    cfg = _planner_cfg()
+    stamp = "2026-08-25T090200Z"
+    stamp_dir = tmp_path / "results" / stamp
+    stamp_dir.mkdir(parents=True)
+    idle = _idle_trace()
+    reply = _reply_trace()
+    save_checkpoint(
+        stamp_dir,
+        _ckpt_for(
+            cfg,
+            stamp=stamp,
+            state="incomplete",
+            gold_ids={"planner": ["p-1"]},
+            items=[
+                ItemRecord("planner", "p-1", 0, "ok", payload=asdict(idle)),
+                ItemRecord("planner", "p-1", 1, "transport_fail", error="RuntimeError: down"),
+            ],
+        ),
+    )
+
+    def fake_planner(cfg, client, persona, *, only_ids=None, on_item=None, **k):
+        assert only_ids == {"p-1"}
+        if on_item:
+            on_item({"id": "p-1"}, reply)
+        return SuiteResult("planner", "ok", {}, 0.0, UsageSplit(), 0.0, 1)
+
+    monkeypatch.setattr("mai_bench2.cli.run_planner_suite", fake_planner)
+    monkeypatch.setattr("mai_bench2.suites.planner.run_planner_suite", fake_planner)
+
+    persona, prompts, _rh = _official()
+    code = execute_resume(
+        load_checkpoint(stamp_dir),
+        cfg,
+        root=tmp_path,
+        out_dir=stamp_dir,
+        clients={"planner": SimpleNamespace()},
+        persona=persona,
+        prompts=prompts,
+    )
+    assert code == 0
+    summary = json.loads((stamp_dir / "summary.json").read_text(encoding="utf-8"))
+    suite = summary["suites"][0]
+    assert suite["repeats"] == 2
+    assert len(suite["subscore_samples"]) == 2
+    s0, s1 = suite["subscore_samples"]
+    assert s0 != s1
+    assert abs(suite["subscore"] - (s0 + s1) / 2) < 1e-9
+    assert suite["subscore_stderr"] is not None
+    predictions = json.loads((stamp_dir / "planner.json").read_text(encoding="utf-8"))["predictions"]
+    assert predictions[0]["pred"] == "reply"

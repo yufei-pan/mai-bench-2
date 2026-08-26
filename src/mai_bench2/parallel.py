@@ -115,7 +115,21 @@ def _pool(fn, items, workers: int, progress, suite, control, on_item) -> list:
             if _abandoning(control):
                 abandoned = True
                 pool.shutdown(wait=False, cancel_futures=True)
-                for fut, index in list(in_flight.items()):
+                done, not_done = wait(list(in_flight), timeout=0)
+                for fut in done:
+                    index = in_flight.pop(fut)
+                    _fill_slot(
+                        slots,
+                        items,
+                        index,
+                        fut,
+                        progress,
+                        suite,
+                        on_item,
+                        pending_is_abandoned=False,
+                    )
+                for fut in not_done:
+                    index = in_flight.pop(fut)
                     _fill_slot(
                         slots,
                         items,
@@ -126,7 +140,6 @@ def _pool(fn, items, workers: int, progress, suite, control, on_item) -> list:
                         on_item,
                         pending_is_abandoned=True,
                     )
-                in_flight.clear()
                 break
 
             if not in_flight:

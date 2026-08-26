@@ -11,10 +11,10 @@ from pathlib import Path
 from mai_bench2.checkpoint import (
     CHECKPOINT_VERSION,
     Checkpoint,
+    RETRYABLE,
     classify_item,
     is_complete,
     planned_items,
-    retryable_items,
     save_checkpoint,
     seat_snapshot,
     update_item,
@@ -37,7 +37,7 @@ from mai_bench2.persona import load_persona
 from mai_bench2.progress import make_progress, planned_total
 from mai_bench2.prompts import load_prompts
 from mai_bench2.report import render_table, write_artifacts, write_redacted_config
-from mai_bench2.resume import _resume_console, gold_ids_for
+from mai_bench2.resume import _resume_console, _results_from_checkpoint, gold_ids_for
 from mai_bench2.suites.e2e import run_e2e_suite
 from mai_bench2.suites.planner import run_planner_suite
 from mai_bench2.suites.replyer import run_replyer_suite
@@ -311,15 +311,11 @@ def _sample_only_ids(checkpoint, name: str, sample: int) -> tuple[bool, set[str]
     """(skip this sample, only_ids). only_ids None means run all selected ids."""
     if checkpoint is None:
         return False, None
-    cold = any(
-        row.suite == name and row.status == "ok" and row.payload is None
-        for row in checkpoint.items
-    )
-    ids = {
-        row.id
-        for row in retryable_items(checkpoint)
-        if row.suite == name and row.sample == sample
-    }
+    rows = [row for row in checkpoint.items if row.suite == name and row.sample == sample]
+    if not rows:
+        return True, None
+    cold = any(row.status == "ok" and row.payload is None for row in rows)
+    ids = {row.id for row in rows if row.status in RETRYABLE}
     if cold:
         return False, None
     if not ids:
@@ -522,6 +518,7 @@ def console(argv: list[str] | None = None) -> None:
             else:
                 ckpt.state = "incomplete"
                 exit_code = 130 if caught_signal["n"] else 1
+                results = _results_from_checkpoint(ckpt, cfg, package_root, results)
             save_checkpoint(out_dir, ckpt)
         finally:
             signal.signal(signal.SIGINT, previous_int)

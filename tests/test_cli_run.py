@@ -780,3 +780,163 @@ def test_console_saves_terminal_checkpoint_before_dropping_signals(
     assert seen["disk_state"] == "complete"
     assert seen["handler"] is not previous_int
     assert seen["handler"] != signal_mod.SIG_DFL
+
+
+def test_console_gold_plan_valueerror_does_not_stamp_complete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+):
+    # Production change that would fail this: empty planned items making
+    # is_complete([]) true and stamping state=complete.
+    cfg_path, out_dir = _planner_run_toml(tmp_path)
+
+    def boom_gold(*_args, **_kwargs):
+        raise ValueError("invalid gold: planner")
+
+    monkeypatch.setattr("mai_bench2.resume.load_gold", boom_gold)
+    _patch_clients_and_suites(
+        monkeypatch,
+        planner=lambda *a, **k: SuiteResult("planner", "ok", {}, 1.0, UsageSplit(), 0.0, 1),
+    )
+    with pytest.raises(SystemExit) as exited:
+        console(["--config", str(cfg_path), "planner", "--smoke"])
+    assert exited.value.code == 1
+    runs = [path for path in out_dir.iterdir() if path.is_dir()]
+    assert len(runs) == 1
+    data = json.loads((runs[0] / "checkpoint.json").read_text(encoding="utf-8"))
+    assert data["state"] != "complete"
+    assert data["items"] == []
+
+
+def test_console_leftover_snapshot_folds_ok_payloads_not_suite_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+):
+    # Production change that would fail this: writing the last run_suites
+    # SuiteResult (n_items=999) instead of folding ok checkpoint payloads.
+    from mai_bench2.planner_loop import PlannerTrace
+
+    cfg_path, out_dir = _planner_run_toml(tmp_path)
+    idle = PlannerTrace(
+        action="none",
+        tools_called=[],
+        wait_seconds=None,
+        reply_args={},
+        handoff_messages=[],
+        tool_reference_text="",
+        step_count=1,
+        assistant_text="先看看再说",
+        final_action="none",
+    )
+
+    def fake_planner(cfg, client, persona, **kwargs):
+        ckpt = kwargs.get("checkpoint")
+        on_item = kwargs.get("on_item")
+        first = next(row.id for row in ckpt.items if row.suite == "planner")
+        if on_item:
+            on_item({"id": first}, idle)
+        for row in ckpt.items:
+            if row.suite == "planner" and row.status == "pending":
+                row.status = "transport_fail"
+                row.error = "RuntimeError: leftover"
+        return SuiteResult("planner", "ok", {"action": 1.0}, 99.0, UsageSplit(), 1.0, 999)
+
+    _patch_clients_and_suites(monkeypatch, planner=fake_planner)
+    with pytest.raises(SystemExit) as exited:
+        console(["--config", str(cfg_path), "planner", "--smoke"])
+    assert exited.value.code == 1
+    runs = [path for path in out_dir.iterdir() if path.is_dir()]
+    assert len(runs) == 1
+    summary = json.loads((runs[0] / "summary.json").read_text(encoding="utf-8"))
+    assert summary["suites"][0]["n_items"] == 1
+    assert summary["suites"][0]["n_items"] != 999
+    assert summary["suites"][0]["subscore"] != 99.0
+
+
+def test_console_e2e_leftover_omits_retryable_judge_error_from_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+):
+    from mai_bench2.planner_loop import PlannerTrace
+    from mai_bench2.suites.e2e import _E2eOne
+
+    cfg_path = tmp_path / "config.toml"
+    out_dir = tmp_path / "results"
+    cfg_path.write_text(
+        "\n".join(
+            [
+                "[planner]",
+                'base_url = "http://p/v1"',
+                'api_key = "SECRET_KEY"',
+                'model = "m"',
+                "[replyer]",
+                'base_url = "http://r/v1"',
+                'api_key = "SECRET_KEY"',
+                'model = "m"',
+                "[judge]",
+                'base_url = "http://j/v1"',
+                'api_key = "SECRET_KEY"',
+                'model = "m"',
+                "[run]",
+                f'output_dir = "{out_dir}"',
+                f'cache_dir = "{tmp_path / "cache"}"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    idle = PlannerTrace(
+        action="none",
+        tools_called=[],
+        wait_seconds=None,
+        reply_args={},
+        handoff_messages=[],
+        tool_reference_text="",
+        step_count=1,
+        assistant_text="x",
+        final_action="none",
+    )
+
+    def _one(*, judge_error):
+        return _E2eOne(
+            trace=idle,
+            visible="",
+            produced=False,
+            row=None,
+            gold_action="none",
+            accepted=["none"],
+            extra={},
+            pred="none",
+            joint=1.0,
+            mute_reply=False,
+            judge_unparsed=False,
+            judge_error=judge_error,
+        )
+
+    def fake_e2e(cfg, *args, **kwargs):
+        ckpt = kwargs.get("checkpoint")
+        on_item = kwargs.get("on_item")
+        ids = [row.id for row in ckpt.items if row.suite == "e2e"]
+        assert len(ids) >= 2
+        if on_item:
+            on_item({"id": ids[0]}, _one(judge_error=None))
+            on_item({"id": ids[1]}, _one(judge_error="Timeout: judge down"))
+        for row in ckpt.items:
+            if row.suite == "e2e" and row.status == "pending":
+                row.status = "transport_fail"
+                row.error = "RuntimeError: leftover"
+        return SuiteResult("e2e", "ok", {"failed_items": 1}, 40.0, UsageSplit(), 1.0, 2)
+
+    _patch_clients_and_suites(monkeypatch, e2e=fake_e2e)
+    with pytest.raises(SystemExit) as exited:
+        console(["--config", str(cfg_path), "e2e", "--smoke"])
+    assert exited.value.code == 1
+    runs = [path for path in out_dir.iterdir() if path.is_dir()]
+    assert len(runs) == 1
+    data = json.loads((runs[0] / "checkpoint.json").read_text(encoding="utf-8"))
+    by_id = {item["id"]: item for item in data["items"] if item["suite"] == "e2e"}
+    ok_ids = [ident for ident, row in by_id.items() if row["status"] == "ok"]
+    retry_ids = [ident for ident, row in by_id.items() if row["status"] == "transport_fail"]
+    assert len(ok_ids) == 1
+    assert len(retry_ids) >= 1
+    summary = json.loads((runs[0] / "summary.json").read_text(encoding="utf-8"))
+    assert summary["suites"][0]["n_items"] == 1
+    e2e_json = json.loads((runs[0] / "e2e.json").read_text(encoding="utf-8"))
+    pred_ids = {pred["id"] for pred in e2e_json["predictions"]}
+    assert pred_ids == set(ok_ids)

@@ -179,7 +179,7 @@ def retryable_items(ckpt: Checkpoint) -> list[ItemRecord]:
 
 
 def is_complete(ckpt: Checkpoint) -> bool:
-    return all(row.status == "ok" for row in ckpt.items)
+    return bool(ckpt.items) and all(row.status == "ok" for row in ckpt.items)
 
 
 def seat_snapshot(endpoint: EndpointConfig) -> SeatSnapshot:
@@ -295,7 +295,12 @@ def load_or_synthesize(directory: Path, gold_ids: dict[str, list[str]]) -> Check
     return ckpt
 
 
-def list_resumable(output_dir: Path, *, gold_ids: dict[str, list[str]]) -> list[Checkpoint]:
+def list_resumable(
+    output_dir: Path,
+    *,
+    gold_ids: dict[str, list[str]] | None = None,
+    gold_ids_for_dir=None,
+) -> list[Checkpoint]:
     listed: list[Checkpoint] = []
     if not output_dir.is_dir():
         return listed
@@ -313,7 +318,10 @@ def list_resumable(output_dir: Path, *, gold_ids: dict[str, list[str]]) -> list[
                 continue
             listed.append(ckpt)
         else:
-            ckpt = synthesize_legacy(path, gold_ids)
+            ids = gold_ids_for_dir(path) if gold_ids_for_dir is not None else gold_ids
+            if not ids:
+                continue
+            ckpt = synthesize_legacy(path, ids)
             if ckpt is not None:
                 listed.append(ckpt)
     listed.sort(key=lambda ckpt: ckpt.stamp, reverse=True)
