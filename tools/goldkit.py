@@ -187,6 +187,11 @@ def load_tapes(root: Path | None = None) -> list[Tape]:
                 plugin_id=raw.get("plugin_id"),
             ))
         tapes.append(Tape(id=str(data["id"]), channel=str(data["channel"]), messages=msgs))
+    if not tapes:
+        raise FileNotFoundError(
+            f"no JSON tapes in {base}. Shipped gold is data/gold/*.jsonl; "
+            "tools/tapes/ is local-only and only needed to rebuild gold."
+        )
     return tapes
 
 

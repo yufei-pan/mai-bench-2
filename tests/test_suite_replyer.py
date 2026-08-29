@@ -130,6 +130,32 @@ def test_replyer_empty_gold_errors(tmp_path):
     assert result.n_items == 0
 
 
+def test_replyer_cancelled_chat_is_abandoned():
+    from mai_bench2.checkpoint import classify_item
+    from mai_bench2.client import Cancelled
+
+    class CancelClient:
+        def chat(self, *a, **k):
+            raise Cancelled()
+
+    seen = []
+
+    def on_item(item, result):
+        seen.append(classify_item("replyer", result))
+
+    result = run_replyer_suite(
+        _cfg(smoke=True, smoke_n=1),
+        CancelClient(),
+        ScriptClient([SCORE_8]),
+        _persona(),
+        root=ROOT,
+        on_item=on_item,
+    )
+    assert seen
+    assert all(status == "abandoned" for status, _, _ in seen)
+    assert result.error_message != "all model calls failed"
+
+
 def test_replyer_all_chat_failures():
     result = run_replyer_suite(_cfg(), BoomClient(), ScriptClient([]), _persona(), root=ROOT)
     assert result.status == "error"

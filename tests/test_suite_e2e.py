@@ -206,6 +206,32 @@ def test_e2e_empty_gold_errors(tmp_path):
     assert result.n_items == 0
 
 
+def test_e2e_cancelled_judge_is_abandoned():
+    from mai_bench2.checkpoint import classify_item
+    from mai_bench2.client import Cancelled
+
+    class CancelJudge:
+        def chat(self, *a, **k):
+            raise Cancelled()
+
+    seen = []
+
+    def on_item(item, result):
+        seen.append(classify_item("e2e", result))
+
+    run_e2e_suite(
+        _cfg(smoke=True, smoke_n=1),
+        ReplyPlanner(),
+        ConstClient("去上海吧"),
+        CancelJudge(),
+        _persona(),
+        root=ROOT,
+        on_item=on_item,
+    )
+    assert seen
+    assert all(status == "abandoned" for status, _, _ in seen)
+
+
 def test_e2e_all_chat_failures():
     result = run_e2e_suite(_cfg(), BoomClient(), ConstClient("x"), ConstClient(SCORE_8), _persona(), root=ROOT)
     assert result.status == "error"

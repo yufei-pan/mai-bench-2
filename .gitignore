@@ -7,3 +7,11 @@ build/
 config.toml
 results/
 .worktrees/
+# Custom persona/prompt files stay local; only the shipped snapshots are tracked.
+personas/*.toml
+!personas/official.toml
+prompts/*.toml
+!prompts/official.toml
+!prompts/minimal.toml
+# Optional local inputs for rebuilding gold. Runtime uses data/gold/*.jsonl.
+tools/tapes/

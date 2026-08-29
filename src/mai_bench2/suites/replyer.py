@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from mai_bench2.checkpoint import RETRYABLE
-from mai_bench2.client import is_content_block
+from mai_bench2.client import Cancelled, is_content_block
 from mai_bench2.config import AppConfig
 from mai_bench2.gold import item_theme, load_gold, select_items
 from mai_bench2.judge import DIMS, judge_reply
@@ -105,10 +105,14 @@ def run_replyer_suite(
     def _one(item: dict) -> _ReplyerOne:
         try:
             visible = generate_reply(replyer_client, persona, item, prompts)
+        except Cancelled:
+            raise
         except Exception as exc:
             return _ReplyerOne("model_fail", error=f"{type(exc).__name__}: {exc}")
         try:
             row = judge_reply(judge_client, persona, item, visible)
+        except Cancelled:
+            raise
         except Exception as exc:
             return _ReplyerOne(
                 "judge_transport",
@@ -150,7 +154,7 @@ def fold_replyer(
     for item, result in zip(selected, mapped):
         if result is None:
             continue
-        if isinstance(result, Abandoned):
+        if isinstance(result, (Abandoned, Cancelled)):
             continue
         if isinstance(result, Exception):
             failures += 1

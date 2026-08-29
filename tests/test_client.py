@@ -403,6 +403,88 @@ def test_chat_plain_400_still_raises(tmp_path: Path):
         client.chat([{"role": "user", "content": "hi"}])
 
 
+GOOGLE_INPUT_TOO_LONG = (
+    "Error code: 400 - {'error': {'code': 400, 'message': "
+    "'The input token count (140000) exceeds the maximum number of tokens "
+    "allowed (32768).', 'status': 'INVALID_ARGUMENT'}}"
+)
+
+
+def test_chat_google_input_too_long_400_is_empty_not_raised(tmp_path: Path):
+    def create_fn(**kwargs):
+        raise Boom(status_code=400, message=GOOGLE_INPUT_TOO_LONG)
+
+    client = ChatClient(
+        EndpointConfig("http://x/v1", "k", "m"),
+        "planner",
+        tmp_path,
+        no_cache=True,
+        create_fn=create_fn,
+    )
+    result = client.chat([{"role": "user", "content": "hi"}])
+    assert result.text == ""
+    assert result.tool_calls == []
+
+
+def test_chat_input_too_long_json_body_is_empty_not_raised(tmp_path: Path):
+    client = ChatClient(
+        EndpointConfig("http://x/v1", "k", "m"),
+        "planner",
+        tmp_path,
+        no_cache=True,
+        create_fn=lambda **kwargs: _resp(
+            text=json.dumps(
+                {
+                    "error": {
+                        "code": 400,
+                        "message": GOOGLE_INPUT_TOO_LONG,
+                        "status": "INVALID_ARGUMENT",
+                    }
+                }
+            )
+        ),
+    )
+    result = client.chat([{"role": "user", "content": "hi"}])
+    assert result.text == ""
+    assert result.tool_calls == []
+
+
+GOOGLE_FREE_TIER_INPUT_QUOTA = (
+    "Error code: 429 - {'error': {'code': 429, 'message': "
+    "'You exceeded your current quota, please check your plan and billing details. "
+    "Quota exceeded for metric: generativelanguage.googleapis.com/"
+    "generate_content_free_tier_input_token_count, limit: 16000, model: gemma-4-31b. "
+    "Please retry in 24s.', 'status': 'RESOURCE_EXHAUSTED', 'details': ["
+    "{'@type': 'type.googleapis.com/google.rpc.QuotaFailure', 'violations': ["
+    "{'quotaMetric': 'generativelanguage.googleapis.com/"
+    "generate_content_free_tier_input_token_count', "
+    "'quotaId': 'GenerateContentInputTokensPerModelPerMinute-FreeTier'}]}]}}"
+)
+
+
+def test_chat_google_free_tier_input_token_quota_is_empty_not_retried(tmp_path: Path):
+    attempts = {"n": 0}
+    sleeps = []
+
+    def create_fn(**kwargs):
+        attempts["n"] += 1
+        raise Boom(status_code=429, message=GOOGLE_FREE_TIER_INPUT_QUOTA)
+
+    client = ChatClient(
+        EndpointConfig("http://x/v1", "k", "m", max_attempts=5),
+        "planner",
+        tmp_path,
+        no_cache=True,
+        create_fn=create_fn,
+        sleep_fn=sleeps.append,
+    )
+    result = client.chat([{"role": "user", "content": "hi"}])
+    assert result.text == ""
+    assert result.tool_calls == []
+    assert attempts["n"] == 1
+    assert sleeps == []
+
+
 def test_non_glm_keeps_xhigh_and_does_not_inject_thinking(tmp_path: Path):
     seen = []
 
@@ -790,4 +872,94 @@ def test_http_limit_wait_is_not_a_timeout(tmp_path: Path):
     assert ra.text == "first"
     assert rb.text == "second"
     assert second_create.is_set()
+
+
+def test_chat_after_cancel_raises_cancelled_without_calling_create(tmp_path: Path):
+    from mai_bench2.client import Cancelled
+
+    calls = []
+
+    def create_fn(**kwargs):
+        calls.append(1)
+        return _resp("hi")
+
+    client = ChatClient(
+        EndpointConfig("http://x/v1", "k", "m"),
+        "planner",
+        tmp_path,
+        no_cache=True,
+        create_fn=create_fn,
+    )
+    client.cancel()
+    with pytest.raises(Cancelled):
+        client.chat([{"role": "user", "content": "hi"}])
+    assert calls == []
+
+
+def test_cancel_closes_client_and_unblocks_in_flight_chat(tmp_path: Path):
+    import threading
+
+    from mai_bench2.client import Cancelled
+
+    started = threading.Event()
+    gate = threading.Event()
+    closed = []
+
+    def create_fn(**kwargs):
+        started.set()
+        if not gate.wait(timeout=5):
+            raise TimeoutError("create was not unblocked")
+        raise RuntimeError("connection closed")
+
+    def close_fn():
+        closed.append(True)
+        gate.set()
+
+    client = ChatClient(
+        EndpointConfig("http://x/v1", "k", "m"),
+        "planner",
+        tmp_path,
+        no_cache=True,
+        create_fn=create_fn,
+        close_fn=close_fn,
+    )
+    box: list[BaseException] = []
+
+    def worker():
+        try:
+            client.chat([{"role": "user", "content": "hi"}])
+        except BaseException as exc:
+            box.append(exc)
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    assert started.wait(timeout=2)
+    client.cancel()
+    thread.join(timeout=2)
+    assert not thread.is_alive()
+    assert closed == [True]
+    assert box and isinstance(box[0], Cancelled)
+
+
+def test_cancel_during_create_does_not_retry(tmp_path: Path):
+    from mai_bench2.client import Cancelled
+
+    calls = []
+
+    def create_fn(**kwargs):
+        calls.append(1)
+        client.cancel()
+        raise Boom(status_code=500, message="closed")
+
+    client = ChatClient(
+        EndpointConfig("http://x/v1", "k", "m", max_attempts=4),
+        "planner",
+        tmp_path,
+        no_cache=True,
+        create_fn=create_fn,
+        sleep_fn=lambda _seconds: None,
+    )
+    with pytest.raises(Cancelled):
+        client.chat([{"role": "user", "content": "hi"}])
+    assert calls == [1]
 

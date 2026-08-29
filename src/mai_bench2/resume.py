@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import signal
 import sys
 import tomllib
@@ -349,7 +350,7 @@ def execute_resume(
     caught_signal = {"n": 0}
     previous_int = signal.getsignal(signal.SIGINT)
     previous_term = signal.getsignal(signal.SIGTERM)
-    install_run_signals(control, caught_signal)
+    install_run_signals(control, caught_signal, clients)
     results: list[SuiteResult] = []
     exit_code = 1
     finished = False
@@ -398,6 +399,8 @@ def execute_resume(
             root=root,
             narrative=not caught_signal["n"],
         )
+    if control.abandon.is_set():
+        os._exit(exit_code)
     return exit_code
 
 

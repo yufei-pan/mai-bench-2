@@ -69,6 +69,10 @@ _GEMINI_LEVEL = {
 }
 
 
+class Cancelled(Exception):
+    """The run was abandoned; this HTTP call should not continue or retry."""
+
+
 class ChatClient:
     def __init__(
         self,
@@ -78,6 +82,7 @@ class ChatClient:
         no_cache: bool,
         create_fn=None,
         sleep_fn: Callable[[float], None] = time.sleep,
+        close_fn: Callable[[], None] | None = None,
     ):
         self._endpoint = endpoint
         self._role = role
@@ -87,6 +92,7 @@ class ChatClient:
         self._usage = TokenCounts()
         self._usage_lock = threading.Lock()
         self._cache_lock = threading.Lock()
+        self._cancelled = threading.Event()
         raw_limit = endpoint.http_limit
         if raw_limit is None:
             self._http_sema = None
@@ -105,7 +111,24 @@ class ChatClient:
                 max_retries=0,
             )
             create_fn = openai_client.chat.completions.create
+            if close_fn is None:
+                close_fn = getattr(openai_client, "close", None)
         self._create = create_fn
+        self._close_fn = close_fn
+
+    def cancel(self) -> None:
+        self._cancelled.set()
+        close_fn = self._close_fn
+        if close_fn is None:
+            return
+        try:
+            close_fn()
+        except Exception:
+            pass
+
+    def _ensure_not_cancelled(self) -> None:
+        if self._cancelled.is_set():
+            raise Cancelled()
 
     def chat(
         self,
@@ -121,6 +144,7 @@ class ChatClient:
         effective_max_tokens = (
             self._endpoint.max_tokens if max_tokens is None else max_tokens
         )
+        self._ensure_not_cancelled()
         cache_path = self._cache_path(
             messages,
             max_tokens=effective_max_tokens,
@@ -154,13 +178,18 @@ class ChatClient:
         )
         try:
             with self._http_slot():
+                self._ensure_not_cancelled()
                 response = self._create_with_retries(kwargs)
             text, tool_calls, usage, usage_missing = _unpack_completion(response)
+        except Cancelled:
+            raise
         except Exception as error:
-            if not is_content_block(error):
+            if self._cancelled.is_set():
+                raise Cancelled() from error
+            if not is_unusable_completion(error):
                 raise
             text, tool_calls, usage, usage_missing = "", [], TokenCounts(), True
-        if is_content_block(text) and not tool_calls:
+        if is_unusable_completion(text) and not tool_calls:
             text = ""
         with self._usage_lock:
             self._usage = add_counts(self._usage, usage)
@@ -206,7 +235,10 @@ class ChatClient:
         if sema is None:
             yield
             return
-        sema.acquire()  # blocking, no timeout
+        while True:
+            self._ensure_not_cancelled()
+            if sema.acquire(timeout=0.05):
+                break
         try:
             yield
         finally:
@@ -273,10 +305,17 @@ class ChatClient:
     def _create_with_retries(self, kwargs: dict):
         attempts = max(1, int(self._endpoint.max_attempts))
         for attempt in range(attempts):
+            self._ensure_not_cancelled()
             try:
                 return self._create(**kwargs)
+            except Cancelled:
+                raise
             except Exception as error:
-                if not _is_retryable(error) or attempt == attempts - 1:
+                if self._cancelled.is_set():
+                    raise Cancelled() from error
+                # Window overflow and free-tier input-token quota cannot succeed on
+                # retry of the same prompt; wait-and-retry only delays a scored miss.
+                if is_unusable_completion(error) or not _is_retryable(error) or attempt == attempts - 1:
                     raise
                 self._sleep(retry_delay(error, attempt))
         raise AssertionError("unreachable")
@@ -286,6 +325,42 @@ def is_content_block(source: object) -> bool:
     """Gemini (and similar proxies) may HTTP 200 an error JSON instead of a completion."""
     blob = _flatten_error(source).upper()
     return "PROHIBITED_CONTENT" in blob or "BLOCKED THE REQUEST" in blob
+
+
+def is_input_too_long(source: object) -> bool:
+    """Prompt will not get a completion: context window overflow, or a quota that
+    a single prompt can never satisfy (Google free-tier input tokens per minute).
+
+    That is a scored miss, not a transport blip: retrying the same payload cannot
+    succeed, and treating it as transport_fail leaves the run incomplete.
+    """
+    blob = _flatten_error(source).upper()
+    if not blob:
+        return False
+    if "CONTEXT_LENGTH_EXCEEDED" in blob or "CONTEXT LENGTH EXCEEDED" in blob:
+        return True
+    if "EXCEEDS THE MAXIMUM NUMBER OF TOKENS ALLOWED" in blob:
+        return True
+    if "INPUT TOKEN COUNT" in blob and "EXCEEDS" in blob:
+        return True
+    if "PROMPT IS TOO LONG" in blob or "INPUT IS TOO LONG" in blob:
+        return True
+    if "MAXIMUM CONTEXT LENGTH" in blob:
+        return True
+    # generativelanguage.../generate_content_free_tier_input_token_count
+    # quotaId GenerateContentInputTokensPerModelPerMinute-FreeTier
+    if "FREE_TIER_INPUT_TOKEN" in blob:
+        return True
+    if "INPUT_TOKEN_COUNT" in blob and "QUOTA" in blob:
+        return True
+    if "GENERATECONTENTINPUTTOKENSPERMODELPERMINUTE" in blob:
+        return True
+    return False
+
+
+def is_unusable_completion(source: object) -> bool:
+    """The API refused to generate; score empty rather than raising transport_fail."""
+    return is_content_block(source) or is_input_too_long(source)
 
 
 def _flatten_error(source: object) -> str:
@@ -310,11 +385,11 @@ def _flatten_error(source: object) -> str:
 
 def _unpack_completion(response) -> tuple[str, list[ToolCall], TokenCounts, bool]:
     err = getattr(response, "error", None)
-    if err is not None and is_content_block(err):
+    if err is not None and is_unusable_completion(err):
         return "", [], TokenCounts(), True
     choices = getattr(response, "choices", None) or []
     if not choices:
-        if is_content_block(response):
+        if is_unusable_completion(response):
             return "", [], TokenCounts(), True
         raise IndexError("completion has no choices")
     message = choices[0].message

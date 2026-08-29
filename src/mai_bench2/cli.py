@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import signal
 import sys
 from datetime import datetime, timezone
@@ -184,12 +185,28 @@ def _missing_seat_error(cfg: AppConfig) -> None:
         raise ConfigError(_SEAT_MESSAGES[flag])
 
 
-def install_run_signals(control: RunControl, caught_signal: dict | None = None) -> None:
+def _cancel_clients(clients) -> None:
+    for client in (clients or {}).values():
+        cancel = getattr(client, "cancel", None)
+        if not callable(cancel):
+            continue
+        try:
+            cancel()
+        except Exception:
+            pass
+
+
+def install_run_signals(
+    control: RunControl,
+    caught_signal: dict | None = None,
+    clients=None,
+) -> None:
     if caught_signal is None:
         caught_signal = {"n": 0}
 
     def on_sigint(signum, frame):
         if control.abandon.is_set():
+            os._exit(130)
             return
         if control.drain.is_set():
             caught_signal["n"] = 2
@@ -199,6 +216,7 @@ def install_run_signals(control: RunControl, caught_signal: dict | None = None) 
                 flush=True,
             )
             control.request_abandon()
+            _cancel_clients(clients)
             return
         caught_signal["n"] = 1
         print(
@@ -552,7 +570,7 @@ def console(argv: list[str] | None = None) -> None:
         caught_signal = {"n": 0}
         previous_int = signal.getsignal(signal.SIGINT)
         previous_term = signal.getsignal(signal.SIGTERM)
-        install_run_signals(control, caught_signal)
+        install_run_signals(control, caught_signal, clients)
         try:
             results, code = run_suites(
                 cfg,
@@ -585,6 +603,8 @@ def console(argv: list[str] | None = None) -> None:
             root=package_root,
             narrative=not caught_signal["n"],
         )
+        if control.abandon.is_set():
+            os._exit(exit_code)
         sys.exit(exit_code)
     except ConfigError as exc:
         print(str(exc), file=sys.stderr)

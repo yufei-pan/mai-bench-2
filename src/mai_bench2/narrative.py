@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from mai_bench2.client import Cancelled
+
 _RETRY_PREFIX = (
     "上一份不是中文终端报告。重写：15–25 行，先含义后最差样本，不要 JSON，不要 ##。\n"
 )
@@ -38,6 +40,8 @@ def generate_narrative(client, digest) -> NarrativeResult:
         payload = messages if attempt == 0 else _report_retry(messages)
         try:
             result = client.chat(payload, tools=None)
+        except Cancelled:
+            raise
         except Exception as exc:
             last_error = str(exc) or type(exc).__name__
             continue

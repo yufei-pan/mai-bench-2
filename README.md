@@ -82,7 +82,8 @@ the venv so they are on `PATH`.
 
 `mai-bench-2 resume` continues an incomplete run (TTY numbered picker, or pass
 `--stamp`). Retries write into the same stamp. SIGINT drains in-flight items; a
-second SIGINT abandons them. Seat `model` must match the checkpoint. API keys
+second SIGINT abandons them, cancels in-flight HTTP, and returns immediately
+(a third SIGINT hard-exits). Seat `model` must match the checkpoint. API keys
 are never stored.
 
 `compare` is a subcommand, not a suite. It reads previous runs from `output_dir`

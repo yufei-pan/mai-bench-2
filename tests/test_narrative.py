@@ -128,6 +128,25 @@ def test_markdown_header_output_is_rejected_and_retried():
     assert len(client.calls) == 2
 
 
+def test_generate_narrative_does_not_retry_cancelled():
+    import pytest
+
+    from mai_bench2.client import Cancelled
+
+    class CancelClient:
+        def __init__(self):
+            self.calls = 0
+
+        def chat(self, *a, **k):
+            self.calls += 1
+            raise Cancelled()
+
+    client = CancelClient()
+    with pytest.raises(Cancelled):
+        generate_narrative(client, _DIGEST)
+    assert client.calls == 1
+
+
 def test_a_plain_terminal_report_is_still_accepted():
     client = ScriptClient([_GLOSS])
     assert generate_narrative(client, _DIGEST).text == _GLOSS

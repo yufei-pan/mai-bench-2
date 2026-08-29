@@ -651,11 +651,14 @@ def test_console_transport_fail_exits_1(tmp_path: Path, monkeypatch: pytest.Monk
     assert "planner" in captured.out
 
 
-def test_install_run_signals_sigint_then_sigterm(capsys):
+def test_install_run_signals_sigint_then_sigterm(monkeypatch, capsys):
     import signal as signal_mod
 
     from mai_bench2.cli import install_run_signals
     from mai_bench2.parallel import RunControl
+
+    exits = []
+    monkeypatch.setattr("mai_bench2.cli.os._exit", lambda code: exits.append(code))
 
     previous_int = signal_mod.getsignal(signal_mod.SIGINT)
     previous_term = signal_mod.getsignal(signal_mod.SIGTERM)
@@ -673,6 +676,10 @@ def test_install_run_signals_sigint_then_sigterm(capsys):
         assert caught["n"] == 2
         sigint(signal_mod.SIGINT, None)
         assert caught["n"] == 2
+        assert exits == [130]
+        first_err = capsys.readouterr().err
+        assert first_err.count("Interrupted; finishing in-flight items...") == 1
+        assert first_err.count("Interrupted again; abandoning in-flight items...") == 1
 
         term = RunControl()
         term_caught = {"n": 0}
@@ -688,8 +695,65 @@ def test_install_run_signals_sigint_then_sigterm(capsys):
         signal_mod.signal(signal_mod.SIGINT, previous_int)
         signal_mod.signal(signal_mod.SIGTERM, previous_term)
     err = capsys.readouterr().err
-    assert err.count("Interrupted; finishing in-flight items...") == 2
-    assert err.count("Interrupted again; abandoning in-flight items...") == 2
+    assert err.count("Interrupted; finishing in-flight items...") == 1
+    assert err.count("Interrupted again; abandoning in-flight items...") == 1
+
+
+def test_second_sigint_cancels_clients(monkeypatch):
+    import signal as signal_mod
+
+    from mai_bench2.cli import install_run_signals
+    from mai_bench2.parallel import RunControl
+
+    class FakeClient:
+        def __init__(self):
+            self.cancelled = 0
+
+        def cancel(self):
+            self.cancelled += 1
+
+    clients = {"planner": FakeClient(), "judge": FakeClient()}
+    monkeypatch.setattr("mai_bench2.cli.os._exit", lambda code: None)
+    previous_int = signal_mod.getsignal(signal_mod.SIGINT)
+    previous_term = signal_mod.getsignal(signal_mod.SIGTERM)
+    try:
+        control = RunControl()
+        install_run_signals(control, {"n": 0}, clients)
+        sigint = signal_mod.getsignal(signal_mod.SIGINT)
+        sigint(signal_mod.SIGINT, None)
+        assert clients["planner"].cancelled == 0
+        sigint(signal_mod.SIGINT, None)
+        assert clients["planner"].cancelled == 1
+        assert clients["judge"].cancelled == 1
+    finally:
+        signal_mod.signal(signal_mod.SIGINT, previous_int)
+        signal_mod.signal(signal_mod.SIGTERM, previous_term)
+
+
+def test_console_abandon_hard_exits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import signal as signal_mod
+
+    from mai_bench2 import cli as cli_mod
+
+    cfg_path, out_dir = _planner_run_toml(tmp_path)
+    exits = []
+
+    def fake_os_exit(code):
+        exits.append(code)
+        raise SystemExit(code)
+
+    def fake_planner(cfg, client, persona, **kwargs):
+        handler = signal_mod.getsignal(signal_mod.SIGINT)
+        handler(signal_mod.SIGINT, None)
+        handler(signal_mod.SIGINT, None)
+        return SuiteResult("planner", "error", {"failed_items": 1}, None, UsageSplit(), 0.0, 0)
+
+    monkeypatch.setattr(cli_mod.os, "_exit", fake_os_exit)
+    _patch_clients_and_suites(monkeypatch, planner=fake_planner)
+    with pytest.raises(SystemExit) as exited:
+        console(["--config", str(cfg_path), "planner", "--smoke"])
+    assert exits == [130]
+    assert exited.value.code == 130
 
 
 def test_gold_ids_for_run_e2e_smoke_matches_hydrated_select():
